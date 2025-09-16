@@ -15,5 +15,8 @@ dependencies = [
 [project.optional-dependencies]
 polars = ["polars"]
 
+[project.scripts]
+mmappet_show = "mmappet.scripts.mmappet_show:main"
+
 [tool.setuptools_scm]
 write_to = "src/mmappet/__scm_version.py"
