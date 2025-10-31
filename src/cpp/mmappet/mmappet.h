@@ -132,22 +132,18 @@ public:
                                      ", got " + type_str);
     }
 
-    template <size_t colnr, typename U>
-    inline MMappedData<U>& get_column()
+    template <size_t colnr>
+    auto& get_column()
     {
-        static_assert(colnr < (1 + sizeof...(Args)), "Column index out of range");
-        if constexpr (colnr == 0)
-        {
-            static_assert(std::is_same<U, T>::value, "Type mismatch for requested column");
+        if constexpr (colnr == 0) {
             return data;
-        }
-        else
-        {
-            return next_dataset.template get_column<colnr - 1, U>();
+        } else {
+            return next_dataset.template get_column<colnr - 1>();
         }
     }
 
 };
+
 
 template<typename T, typename... Args>
 auto OpenDataset(const std::filesystem::path& filepath)
