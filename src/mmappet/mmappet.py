@@ -1,9 +1,10 @@
-import os, mmap
-import pandas as pd
-import numpy as np
-import numpy.typing as npt
 from types import SimpleNamespace
 from pathlib import Path
+import os, mmap
+import numpy as np
+import numpy.typing as npt
+import pandas as pd
+
 
 def schema_to_str(schema: pd.DataFrame):
     ret = []
@@ -34,6 +35,7 @@ def get_schema(**kwargs: np.dtype):
     """Turn mapping name -> np.dtype into what mmapped_df expects: a schema."""
     return pd.DataFrame({c: pd.Series(dtype=dt) for c, dt in kwargs.items()})
 
+
 class DatasetWriter:
     def __init__(self, path: Path | str, append_ok: bool = False, overwrite_dir=False):
         if append_ok and overwrite_dir:
@@ -54,6 +56,7 @@ class DatasetWriter:
             else:
                 if overwrite_dir:
                     import shutil
+
                     shutil.rmtree(self.path, ignore_errors=True)
         else:
             self.path.mkdir(parents=True, exist_ok=overwrite_dir)
@@ -107,7 +110,7 @@ class DatasetWriter:
             len(kwargs) > 0
         ), "Using `.new` requires you to specify the types of columns in advance and pass them in as `column=numpy.type` fashion, e.g. `scan=np.uint32`."
         res = cls(path, append_ok, overwrite_dir)
-        res._reset_schema(like=get_scheme(**kwargs))
+        res._reset_schema(like=get_schema(**kwargs))
         return res
 
     def close(self):
@@ -192,7 +195,6 @@ class DatasetWriter:
             file.write(dat.tobytes())
 
 
-
 def open_dataset_dct(path: Path | str, read_write: bool = False, **kwargs):
     path = Path(path)
     df = _read_schema_tbl(path)
@@ -235,6 +237,7 @@ def open_dataset(path: Path | str, **kwargs):
 
 def np_to_pa(np_arr):
     """Convert Numpy array to Pyarrow one, sharing the same backing buffer"""
+    import pyarrow as pa
     pyarrow_buf = pa.py_buffer(np_arr)
     dtype = pa.from_numpy_dtype(np_arr.dtype)
     return pa.Array.from_buffers(
@@ -250,6 +253,6 @@ def open_dataset_pa(path: Path | str, **kwargs):
 def open_dataset_pl(path: Path | str, **kwargs):
     """Return dataset as mmapped Polars dataframe"""
     import polars as pl
+    import pyarrow as pa
 
     return pl.from_arrow(pa.table(open_dataset_pa(path, **kwargs)))
-
