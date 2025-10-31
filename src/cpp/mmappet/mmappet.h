@@ -99,8 +99,6 @@ split_first_space(const std::string& s) {
 
 
 
-
-
 template<typename... Args>
 class Dataset {
 public:
@@ -169,35 +167,3 @@ auto OpenDataset(const std::filesystem::path& filepath)
     file.close();
     return Dataset<T, Args...>(filepath, tmp_type_strs, 0);
 }
-
-
-
-template<typename... Args>
-class DatasetWriter {
-};
-
-template<typename T, typename... Args>
-class DatasetWriter<T, Args...> {
-    const std::string type_str;
-    const std::string column_name;
-    const size_t column_number;
-    std::ofstream file;
-    DatasetWriter<Args...> next_dataset_writer;
-public:
-    DatasetWriter(const std::filesystem::path& filepath,
-                  std::ofstream& schema_file,
-                  size_t col_nr,
-                  const std::vector<std::string>& column_names
-                  bool append = false) :
-        type_str(get_type_str<T>()),
-        column_name(column_names[col_nr]),
-        column_number(col_nr),
-        file(),
-        next_dataset_writer(filepath, schema_file, col_nr + 1, column_names)
-    {
-        if(!append)
-            schema_file << type_str << " " << column_name << "\n";
-        file.exceptions(std::ofstream::failbit | std::ofstream::badbit);
-        file.open(filepath / (std::to_string(col_nr) + ".bin"), std::ios::out | std::ios::binary | std::ios::trunc);
-
-    }
