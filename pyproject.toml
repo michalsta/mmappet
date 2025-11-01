@@ -19,5 +19,9 @@ testing = ["pytest"]
 [project.scripts]
 mmappet_show = "mmappet.scripts.mmappet_show:main"
 
-[tool.setuptools_scm]
-write_to = "src/mmappet/__scm_version.py"
+[tool.setuptools]
+package-data = {"mmappet" = ["mmappet_cpp/mmappet/*.h", "mmappet_cpp/mmappet/*.hpp"]}
+include-package-data = false
+
+[tool.setuptools.package-dir]
+"" = "src"
