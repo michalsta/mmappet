@@ -21,6 +21,12 @@ if __name__ == "__main__":
         help="Print the path to the mmappet module",
     )
     parser.add_argument(
+        "--include",
+        "-i",
+        action="store_true",
+        help="Print the path to the mmappet include files",
+    )
+    parser.add_argument(
         "--scm_version",
         "-s",
         action="store_true",
@@ -29,6 +35,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.path:
         print(Path(__file__).parent.resolve())
+    elif args.include:
+        include_path = Path(__file__).parent.resolve() / "mmappet_cpp"
+        print(include_path)
     elif args.scm_version:
         from . import __scm_version as scm_version
 
