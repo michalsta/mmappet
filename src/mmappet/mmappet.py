@@ -23,12 +23,12 @@ def str_to_schema(s: str):
     return pd.DataFrame(ret)
 
 
-def write_schema(schema: pd.DataFrame, path: PathLike[str]):
+def write_schema(schema: pd.DataFrame, path: PathLike):
     with open(Path(path) / "schema.txt", "wt") as f:
         f.write(schema_to_str(schema))
 
 
-def _read_schema_tbl(path: PathLike[str]):
+def _read_schema_tbl(path: PathLike):
     with open(path / "schema.txt", "rt") as f:
         return str_to_schema(f.read())
 
@@ -40,7 +40,7 @@ def get_schema(**kwargs: np.dtype):
 
 class DatasetWriter:
     def __init__(
-        self, path: PathLike[str], append_ok: bool = False, overwrite_dir: bool = False
+        self, path: PathLike, append_ok: bool = False, overwrite_dir: bool = False
     ):
         if append_ok and overwrite_dir:
             raise ValueError("Cannot set both append_ok and overwrite_dir to True.")
@@ -67,7 +67,7 @@ class DatasetWriter:
 
     @staticmethod
     def preallocate_dataset(
-        path: PathLike[str],
+        path: PathLike,
         dataframe_scheme: pd.DataFrame,
         nrows: int,
         overwrite_dir=False,
@@ -105,7 +105,7 @@ class DatasetWriter:
     @classmethod
     def new(
         cls,
-        path: PathLike[str],
+        path: PathLike,
         append_ok: bool = False,
         overwrite_dir: bool = False,
         **kwargs,
@@ -199,7 +199,7 @@ class DatasetWriter:
             file.write(dat.tobytes())
 
 
-def open_dataset_dct(path: PathLike[str], read_write: bool = False, **kwargs):
+def open_dataset_dct(path: PathLike, read_write: bool = False, **kwargs):
     path = Path(path)
     df = _read_schema_tbl(path)
     new_data = {}
@@ -222,7 +222,7 @@ def open_dataset_dct(path: PathLike[str], read_write: bool = False, **kwargs):
 
 
 def open_new_dataset_dct(
-    path: PathLike[str], scheme: Union[pd.DataFrame, dict], nrows: int
+    path: PathLike, scheme: Union[pd.DataFrame, dict], nrows: int
 ):
     """Create a new dataset and return it as dictionary of column names to appropriately sized arrays."""
     DatasetWriter.preallocate_dataset(
@@ -233,11 +233,11 @@ def open_new_dataset_dct(
     return open_dataset_dct(path, read_write=True)
 
 
-def open_dataset_simple_namespace(path: PathLike[str], **kwargs) -> SimpleNamespace:
+def open_dataset_simple_namespace(path: PathLike, **kwargs) -> SimpleNamespace:
     return SimpleNamespace(**open_dataset_dct(path, **kwargs))
 
 
-def open_dataset(path: PathLike[str], **kwargs):
+def open_dataset(path: PathLike, **kwargs):
     return pd.DataFrame(open_dataset_dct(path, **kwargs), copy=False)
 
 
@@ -252,12 +252,12 @@ def np_to_pa(np_arr):
     )
 
 
-def open_dataset_pa(path: PathLike[str], **kwargs):
+def open_dataset_pa(path: PathLike, **kwargs):
     """Return dataset as dict of colname -> mmapped pyarrow array"""
     return {key: np_to_pa(val) for key, val in open_dataset_dct(path, **kwargs).items()}
 
 
-def open_dataset_pl(path: PathLike[str], **kwargs):
+def open_dataset_pl(path: PathLike, **kwargs):
     """Return dataset as mmapped Polars dataframe"""
     import polars as pl
     import pyarrow as pa
