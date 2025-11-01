@@ -9,6 +9,7 @@ import shutil
 def test_roundtrip():
     with tempfile.TemporaryDirectory() as tmpdir:
         path = os.path.join(tmpdir, "test.mmappet")
+        print(f"Testing roundtrip in temporary directory: {path}")
         schema = pd.DataFrame(
             {
                 "a": pd.Series(dtype=np.uint32),
@@ -45,6 +46,8 @@ def test_roundtrip():
         df = open_dataset(path, read_write=False)
         combined_data = pd.concat([data, more_data], ignore_index=True)
         pd.testing.assert_frame_equal(df, combined_data)
+
+        shutil.rmtree(path, ignore_errors=True)
 
 
 if __name__ == "__main__":
