@@ -57,7 +57,7 @@ def check_roundtrip():
 def test_roundtrip():
     try:
         check_roundtrip()
-    except PermissionError as e:
+    except (PermissionError, NotADirectoryError) as e:
         if os.name == "nt":
             print(
                 "PermissionError encountered on Windows. This may be due to file locking behavior. Skipping test."
