@@ -9,11 +9,11 @@ description = "Appendable, mmappable format for DataFrames on disk"
 dependencies = [
     "numpy",
     "pandas",
-    "pyarrow",
 ]
 
 [project.optional-dependencies]
 polars = ["polars"]
+pyarrow = ["pyarrow"]
 testing = ["pytest"]
 
 [project.scripts]

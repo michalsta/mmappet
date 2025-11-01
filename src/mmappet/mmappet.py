@@ -29,7 +29,7 @@ def write_schema(schema: pd.DataFrame, path: PathLike):
 
 
 def _read_schema_tbl(path: PathLike):
-    with open(path / "schema.txt", "rt") as f:
+    with open(Path(path) / "schema.txt", "rt") as f:
         return str_to_schema(f.read())
 
 
