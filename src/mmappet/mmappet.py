@@ -1,6 +1,8 @@
 from types import SimpleNamespace
+from typing import Union
 from pathlib import Path
 import os, mmap
+from os import PathLike
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
@@ -21,12 +23,12 @@ def str_to_schema(s: str):
     return pd.DataFrame(ret)
 
 
-def write_schema(schema: pd.DataFrame, path: Path | str):
+def write_schema(schema: pd.DataFrame, path: PathLike[str]):
     with open(Path(path) / "schema.txt", "wt") as f:
         f.write(schema_to_str(schema))
 
 
-def _read_schema_tbl(path: Path):
+def _read_schema_tbl(path: PathLike[str]):
     with open(path / "schema.txt", "rt") as f:
         return str_to_schema(f.read())
 
@@ -37,7 +39,9 @@ def get_schema(**kwargs: np.dtype):
 
 
 class DatasetWriter:
-    def __init__(self, path: Path | str, append_ok: bool = False, overwrite_dir=False):
+    def __init__(
+        self, path: PathLike[str], append_ok: bool = False, overwrite_dir: bool = False
+    ):
         if append_ok and overwrite_dir:
             raise ValueError("Cannot set both append_ok and overwrite_dir to True.")
         if isinstance(path, str):
@@ -63,7 +67,7 @@ class DatasetWriter:
 
     @staticmethod
     def preallocate_dataset(
-        path: Path | str,
+        path: PathLike[str],
         dataframe_scheme: pd.DataFrame,
         nrows: int,
         overwrite_dir=False,
@@ -101,9 +105,9 @@ class DatasetWriter:
     @classmethod
     def new(
         cls,
-        path: Path | str,
+        path: PathLike[str],
         append_ok: bool = False,
-        overwrite_dir=False,
+        overwrite_dir: bool = False,
         **kwargs,
     ):
         assert (
@@ -131,7 +135,7 @@ class DatasetWriter:
     def __len__(self):
         return self.length
 
-    def append_df(self, df):
+    def append_df(self, df: pd.DataFrame):
         if len(df) == 0:
             return
         if self.files is None:
@@ -145,7 +149,7 @@ class DatasetWriter:
             ), f"Types don't match: {column.values.dtype} vs {self.dtypes[idx]}"
             self.files[idx].write(column.values.tobytes())
 
-    def append_column(self, colname: str, column: npt.NDArray | pd.Series):
+    def append_column(self, colname: str, column: Union[npt.NDArray, pd.Series]):
         if isinstance(column, pd.Series):
             column = column.values
         assert self.length == len(column)
@@ -154,7 +158,7 @@ class DatasetWriter:
             f.write(column.tobytes())
         self._reset_schema(like=self.schema)
 
-    def append_columns(self, **colname_to_values: npt.NDArray | pd.Series):
+    def append_columns(self, **colname_to_values: Union[npt.NDArray, pd.Series]):
         for col, vals in colname_to_values.items():
             assert len(vals) == len(
                 self
@@ -195,7 +199,7 @@ class DatasetWriter:
             file.write(dat.tobytes())
 
 
-def open_dataset_dct(path: Path | str, read_write: bool = False, **kwargs):
+def open_dataset_dct(path: PathLike[str], read_write: bool = False, **kwargs):
     path = Path(path)
     df = _read_schema_tbl(path)
     new_data = {}
@@ -217,7 +221,9 @@ def open_dataset_dct(path: Path | str, read_write: bool = False, **kwargs):
     return new_data
 
 
-def open_new_dataset_dct(path: Path | str, scheme: pd.DataFrame | dict, nrows: int):
+def open_new_dataset_dct(
+    path: PathLike[str], scheme: Union[pd.DataFrame, dict], nrows: int
+):
     """Create a new dataset and return it as dictionary of column names to appropriately sized arrays."""
     DatasetWriter.preallocate_dataset(
         path,
@@ -227,17 +233,18 @@ def open_new_dataset_dct(path: Path | str, scheme: pd.DataFrame | dict, nrows: i
     return open_dataset_dct(path, read_write=True)
 
 
-def open_dataset_simple_namespace(path: Path | str, **kwargs) -> SimpleNamespace:
+def open_dataset_simple_namespace(path: PathLike[str], **kwargs) -> SimpleNamespace:
     return SimpleNamespace(**open_dataset_dct(path, **kwargs))
 
 
-def open_dataset(path: Path | str, **kwargs):
+def open_dataset(path: PathLike[str], **kwargs):
     return pd.DataFrame(open_dataset_dct(path, **kwargs), copy=False)
 
 
 def np_to_pa(np_arr):
     """Convert Numpy array to Pyarrow one, sharing the same backing buffer"""
     import pyarrow as pa
+
     pyarrow_buf = pa.py_buffer(np_arr)
     dtype = pa.from_numpy_dtype(np_arr.dtype)
     return pa.Array.from_buffers(
@@ -245,12 +252,12 @@ def np_to_pa(np_arr):
     )
 
 
-def open_dataset_pa(path: Path | str, **kwargs):
+def open_dataset_pa(path: PathLike[str], **kwargs):
     """Return dataset as dict of colname -> mmapped pyarrow array"""
     return {key: np_to_pa(val) for key, val in open_dataset_dct(path, **kwargs).items()}
 
 
-def open_dataset_pl(path: Path | str, **kwargs):
+def open_dataset_pl(path: PathLike[str], **kwargs):
     """Return dataset as mmapped Polars dataframe"""
     import polars as pl
     import pyarrow as pa
