@@ -211,19 +211,28 @@ def open_dataset_dct(path: PathLike, read_write: bool = False, **kwargs):
         # We're not on Windows, thank goodness
         pass
 
-    mmap_flags = mmap.PROT_READ | mmap.PROT_WRITE if read_write else mmap.PROT_READ
+    def do_mmap(fd):
+        if os.name == "nt":
+            return mmap.mmap(
+                fd, 0, access=mmap.ACCESS_WRITE if read_write else mmap.ACCESS_READ
+            )
+        else:
+            return mmap.mmap(
+                fd,
+                0,
+                prot=mmap.PROT_READ | mmap.PROT_WRITE if read_write else mmap.PROT_READ,
+            )
+
     for idx, column_name in enumerate(df):
         col_dtype = df[column_name].values.dtype
         fd = os.open(path / f"{idx}.bin", open_flags)
-        mmap_obj = mmap.mmap(fd, 0, prot=mmap_flags)
+        mmap_obj = do_mmap(fd)
         new_data[column_name] = np.frombuffer(mmap_obj, dtype=col_dtype)
 
     return new_data
 
 
-def open_new_dataset_dct(
-    path: PathLike, scheme: Union[pd.DataFrame, dict], nrows: int
-):
+def open_new_dataset_dct(path: PathLike, scheme: Union[pd.DataFrame, dict], nrows: int):
     """Create a new dataset and return it as dictionary of column names to appropriately sized arrays."""
     DatasetWriter.preallocate_dataset(
         path,
