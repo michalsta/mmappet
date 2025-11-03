@@ -11,7 +11,10 @@
 
 
 template<typename T>
-constexpr std::string get_type_str()
+#if defined(__cpp_lib_constexpr_string) && __cpp_lib_constexpr_string >= 201907L
+constexpr
+#endif
+std::string get_type_str()
 {
     if constexpr (std::is_same<T, uint8_t>::value) return "uint8";
     else if constexpr (std::is_same<T, int8_t>::value) return "int8";
@@ -104,6 +107,11 @@ public:
         return std::tuple<>();
     }
 
+    std::tuple<> operator[](size_t index)
+    {
+        return std::tuple<>();
+    }
+
 };
 
 template<typename T, typename... Args>
@@ -128,6 +136,10 @@ public:
             throw std::runtime_error("Type mismatch for column " + std::to_string(column_number) +
                                      ": expected " + get_type_str<T>() +
                                      ", got " + type_str);
+        if constexpr (sizeof...(Args) > 0)
+            if(next_dataset.size() != data.size())
+                throw std::runtime_error("Column size mismatch between column " + std::to_string(column_number) +
+                                     " and column " + std::to_string(column_number + 1));
     }
 
     template <size_t colnr>
@@ -140,9 +152,43 @@ public:
         }
     }
 
+    inline size_t size() const
+    {
+        return data.size();
+    }
+
     auto move_columns()
     {
         return std::tuple_cat(std::make_tuple(std::move(data)), next_dataset.move_columns());
+    }
+
+    std::tuple<T, Args...> operator[](size_t index)
+    {
+        return std::tuple_cat(std::make_tuple(data[index]), next_dataset[index]);
+    }
+
+    class Iterator {
+        size_t index;
+        Dataset<T, Args...>* dataset;
+    public:
+        Iterator(size_t idx, Dataset<T, Args...>* ds) : index(idx), dataset(ds) {};
+        std::tuple<T, Args...> operator*() {
+            return (*dataset)[index];
+        }
+        Iterator& operator++() {
+            ++index;
+            return *this;
+        }
+        bool operator!=(const Iterator& other) const {
+            return index != other.index;
+        }
+    };
+
+    Iterator begin() {
+        return Iterator(0, this);
+    }
+    Iterator end() {
+        return Iterator(data.size(), this);
     }
 
 };
