@@ -70,11 +70,13 @@ public:
     MMappedData(MMappedData&& other) noexcept :
         mappedData(other.mappedData),
         fileDescriptor(other.fileDescriptor),
-        dataSize(other.dataSize)
+        dataSize(other.dataSize),
+        no_elements(other.no_elements)
     {
         other.mappedData = nullptr;
         other.fileDescriptor = -1;
         other.dataSize = 0;
+        other.no_elements = 0;
     }
     MMappedData& operator=(MMappedData&& other) noexcept = delete;
 
@@ -88,24 +90,20 @@ public:
 };
 
 
-std::pair<std::string, std::string>
-split_first_space(const std::string& s) {
-    size_t pos = s.find(' ');
-    if (pos == std::string::npos) {
-        return {s, ""};
-    }
-    return { s.substr(0, pos), s.substr(pos + 1) };
-}
-
-
 
 template<typename... Args>
 class Dataset {
 public:
-    Dataset(const std::filesystem::path& filepath, std::vector<std::string> type_strs, size_t col_nr)
+    Dataset(const std::filesystem::path& filepath, std::vector<std::pair<std::string,std::string>> type_strs, size_t col_nr)
     {
         // Base case: do nothing
     }
+
+    std::tuple<> move_columns()
+    {
+        return std::tuple<>();
+    }
+
 };
 
 template<typename T, typename... Args>
@@ -119,9 +117,9 @@ class Dataset<T, Args...>
 
 public:
 
-    Dataset(const std::filesystem::path& filepath, const std::vector<std::string>& type_strs, size_t col_nr) :
-        type_str(split_first_space(type_strs.back()).first),
-        column_name(split_first_space(type_strs.back()).second),
+    Dataset(const std::filesystem::path& filepath, const std::vector<std::pair<std::string, std::string>>& type_strs, size_t col_nr) :
+        type_str(type_strs.back().first),
+        column_name(type_strs.back().second),
         column_number(col_nr),
         data(filepath / (std::to_string(col_nr) + ".bin")),
         next_dataset(filepath, type_strs, col_nr + 1)
@@ -142,26 +140,90 @@ public:
         }
     }
 
+    auto move_columns()
+    {
+        return std::tuple_cat(std::make_tuple(std::move(data)), next_dataset.move_columns());
+    }
+
 };
+
+std::pair<std::string, std::string>
+split_first_space(const std::string& s) {
+    size_t pos = s.find(' ');
+    if (pos == std::string::npos) {
+        return {s, ""};
+    }
+    return { s.substr(0, pos), s.substr(pos + 1) };
+}
 
 
 template<typename T, typename... Args>
-auto OpenDataset(const std::filesystem::path& filepath)
+auto OpenDataset(const std::filesystem::path& filepath, std::initializer_list<std::string> column_names, bool readonly = true)
 {
+    if(!readonly)
+        throw std::runtime_error("read-write mode not implemented yet.");
     std::ifstream file;
     file.exceptions(std::ifstream::failbit | std::ifstream::badbit);
     file.open(filepath / "schema.txt", std::ios::in | std::ios::binary);
     file.exceptions(std::ifstream::goodbit);
 
-    std::vector<std::string> tmp_type_strs;
-    std::string tmp_type_str;
-    while(std::getline(file, tmp_type_str))
+    std::vector<std::pair<std::string, std::string>> tmp_type_strs;
+    std::string s;
+    while(std::getline(file, s))
     {
-        std::cerr << "Read type string: " << tmp_type_str << std::endl;
-        tmp_type_strs.push_back(tmp_type_str);
+        if(s.empty())
+            continue;
+        size_t pos = s.find(' ');
+        if (pos == std::string::npos)
+            tmp_type_strs.emplace_back(s, "");
+        else
+            tmp_type_strs.emplace_back(s.substr(0, pos), s.substr(pos + 1));
+
+        std::cerr << "Read type string: " << s << std::endl;
     }
     file.close();
+
+    if(column_names.size() != tmp_type_strs.size())
+        throw std::runtime_error("Number of column names provided as argument does not match number of columns in file.");
+
+    size_t ii = 0;
+    for(auto it = column_names.begin(); it != column_names.end(); ++it, ++ii)
+    {
+        if(*it != tmp_type_strs[ii].second)
+            throw std::runtime_error("Column name mismatch at column " + std::to_string(ii) +
+                                     ": expected '" + *it +
+                                     "', got '" + tmp_type_strs[ii].second + "'");
+    }
     return Dataset<T, Args...>(filepath, tmp_type_strs, 0);
-}
+};
 
 
+
+
+template<typename... Args>
+class Schema
+{
+    std::vector<std::string> column_names;
+
+    template<size_t... Is>
+    auto open_dataset_impl(const std::filesystem::path& filepath, bool readonly, std::index_sequence<Is...>)
+    {
+        return OpenDataset<Args...>(filepath, {column_names[Is]...}, readonly);
+    }
+
+public:
+    template<typename... Strings>
+    Schema(const Strings&... col_names)
+        { (column_names.push_back(col_names), ...);};
+
+    auto open_dataset(const std::filesystem::path& filepath, bool readonly = true)
+    {
+        return open_dataset_impl(filepath, readonly, std::make_index_sequence<sizeof...(Args)>{});
+    }
+
+    auto get_columns(const std::filesystem::path& filepath, bool readonly = true)
+    {
+        auto dataset = open_dataset(filepath, readonly);
+        return dataset.move_columns();
+    }
+};
