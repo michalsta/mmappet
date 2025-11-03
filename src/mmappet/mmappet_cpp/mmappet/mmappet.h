@@ -245,8 +245,54 @@ auto OpenDataset(const std::filesystem::path& filepath, std::initializer_list<st
 
 
 
-
+template<size_t idx, typename T, typename... Args>
+std::string schema_string_impl(const std::vector<std::string>& column_names)
+{
+    std::string result = get_type_str<T>() + " " + column_names[idx] + "\n";
+    if constexpr (sizeof...(Args) == 0)
+    {
+        return result;
+    }
+    else
+    {
+        result += schema_string_impl<idx + 1, Args...>(column_names);
+        return result;
+    }
+}
 template<typename... Args>
+class DatasetWriter {
+public:
+    DatasetWriter(const std::filesystem::path& filepath, size_t col_nr) {}
+    void write_row() {}
+    void write_rows(size_t n) {}
+};
+
+template<typename T, typename... Args>
+class DatasetWriter<T, Args...> {
+    std::ofstream file;
+    DatasetWriter<Args...> next_writer;
+
+public:
+    DatasetWriter(const std::filesystem::path& filepath, size_t col_nr) :
+        file(filepath / (std::to_string(col_nr) + ".bin"), std::ios::out | std::ios::binary | std::ios::trunc),
+        next_writer(filepath, col_nr + 1)
+    {}
+
+    void write_row(const T& value, const Args&... args)
+    {
+        file.write(reinterpret_cast<const char*>(&value), sizeof(T));
+        next_writer.write_row(args...);
+    }
+
+    void write_rows(size_t n, const T* values, const Args*... args)
+    {
+        file.write(reinterpret_cast<const char*>(values), n * sizeof(T));
+        next_writer.write_rows(n, args...);
+    }
+};
+
+
+template<typename T, typename... Args>
 class Schema
 {
     std::vector<std::string> column_names;
@@ -254,17 +300,33 @@ class Schema
     template<size_t... Is>
     auto open_dataset_impl(const std::filesystem::path& filepath, bool readonly, std::index_sequence<Is...>)
     {
-        return OpenDataset<Args...>(filepath, {column_names[Is]...}, readonly);
+        return OpenDataset<T, Args...>(filepath, {column_names[Is]...}, readonly);
     }
 
-public:
+    template<size_t idx, typename U, typename... Rest>
+    std::string schema_string_impl() const
+    {
+        std::string result = get_type_str<U>() + " " + column_names[idx] + "\n";
+        if constexpr (sizeof...(Rest) == 0)
+        {
+            return result;
+        }
+        else
+        {
+            result += schema_string_impl<idx + 1, Rest...>();
+            return result;
+        }
+    }
+
+
+    public:
     template<typename... Strings>
     Schema(const Strings&... col_names)
-        { (column_names.push_back(col_names), ...);};
+    { (column_names.push_back(col_names), ...);};
 
     auto open_dataset(const std::filesystem::path& filepath, bool readonly = true)
     {
-        return open_dataset_impl(filepath, readonly, std::make_index_sequence<sizeof...(Args)>{});
+        return open_dataset_impl(filepath, readonly, std::make_index_sequence<sizeof...(Args)+1>{});
     }
 
     auto get_columns(const std::filesystem::path& filepath, bool readonly = true)
@@ -272,4 +334,26 @@ public:
         auto dataset = open_dataset(filepath, readonly);
         return dataset.move_columns();
     }
+
+    std::string schema_string() const
+    {
+        return schema_string_impl<0, T, Args...>();
+    }
+
+    void write_schema_file(const std::filesystem::path& filepath) const
+    {
+        std::ofstream file;
+        file.exceptions(std::ofstream::failbit | std::ofstream::badbit);
+        file.open(filepath, std::ios::out |  std::ios::trunc | std::ios::binary);
+        file << schema_string();
+        file.close();
+    }
+
+    DatasetWriter<T, Args...> create_writer(const std::filesystem::path& filepath)
+    {
+        std::filesystem::create_directories(filepath);
+        write_schema_file(filepath / "schema.txt");
+        return DatasetWriter<T, Args...>(filepath, 0);
+    }
+
 };
