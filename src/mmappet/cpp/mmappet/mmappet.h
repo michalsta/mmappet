@@ -97,7 +97,7 @@ public:
 template<typename... Args>
 class Dataset {
 public:
-    Dataset(const std::filesystem::path& filepath, std::vector<std::pair<std::string,std::string>> type_strs, size_t col_nr)
+    Dataset(const std::filesystem::path&, std::vector<std::pair<std::string,std::string>>, size_t)
     {
         // Base case: do nothing
     }
@@ -107,7 +107,7 @@ public:
         return std::tuple<>();
     }
 
-    std::tuple<> operator[](size_t index)
+    std::tuple<> operator[](size_t)
     {
         return std::tuple<>();
     }
@@ -262,9 +262,9 @@ std::string schema_string_impl(const std::vector<std::string>& column_names)
 template<typename... Args>
 class DatasetWriter {
 public:
-    DatasetWriter(const std::filesystem::path& filepath, size_t col_nr) {}
+    DatasetWriter(const std::filesystem::path&, size_t) {}
     void write_row() {}
-    void write_rows(size_t n) {}
+    void write_rows(size_t) {}
 };
 
 template<typename T, typename... Args>

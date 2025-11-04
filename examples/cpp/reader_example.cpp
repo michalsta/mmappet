@@ -1,4 +1,4 @@
-#include "mmappet.h"
+#include <mmappet/mmappet.h>
 
 
 int main()
