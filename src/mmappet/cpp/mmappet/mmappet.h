@@ -274,9 +274,12 @@ class DatasetWriter<T, Args...> {
 
 public:
     DatasetWriter(const std::filesystem::path& filepath, size_t col_nr) :
-        file(filepath / (std::to_string(col_nr) + ".bin"), std::ios::out | std::ios::binary | std::ios::trunc),
+        file(),
         next_writer(filepath, col_nr + 1)
-    {}
+    {
+        file.exceptions(std::ofstream::failbit | std::ofstream::badbit);
+        file.open(filepath / (std::to_string(col_nr) + ".bin"), std::ios::out | std::ios::binary | std::ios::trunc);
+    }
 
     void write_row(const T& value, const Args&... args)
     {
