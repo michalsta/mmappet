@@ -145,7 +145,7 @@ public:
 template<typename... Args>
 class Dataset {
 public:
-    Dataset(const std::filesystem::path&, std::vector<std::pair<std::string,std::string>>, size_t)
+    Dataset(const std::filesystem::path&, std::vector<std::pair<std::string,std::string>>, size_t, int, int, int)
     {
         // Base case: do nothing
     }
@@ -173,12 +173,18 @@ class Dataset<T, Args...>
 
 public:
 
-    Dataset(const std::filesystem::path& filepath, const std::vector<std::pair<std::string, std::string>>& type_strs, size_t col_nr) :
+    Dataset(const std::filesystem::path& filepath,
+            const std::vector<std::pair<std::string, std::string>>& type_strs,
+            size_t col_nr,
+            int open_flags = O_RDONLY,
+            int mmap_prot = PROT_READ,
+            int mmap_flags = MAP_SHARED
+        ) :
         type_str(type_strs.back().first),
         column_name(type_strs.back().second),
         column_number(col_nr),
-        data(filepath / (std::to_string(col_nr) + ".bin")),
-        next_dataset(filepath, type_strs, col_nr + 1)
+        data(filepath / (std::to_string(col_nr) + ".bin"), open_flags, mmap_prot, mmap_flags),
+        next_dataset(filepath, type_strs, col_nr + 1, open_flags, mmap_prot, mmap_flags)
     {
         if(type_str != get_type_str<T>())
             throw std::runtime_error("Type mismatch for column " + std::to_string(column_number) +
@@ -252,10 +258,8 @@ split_first_space(const std::string& s) {
 
 
 template<typename T, typename... Args>
-auto OpenDataset(const std::filesystem::path& filepath, std::initializer_list<std::string> column_names, bool readonly = true)
+auto OpenDataset(const std::filesystem::path& filepath, std::initializer_list<std::string> column_names, int open_flags = O_RDONLY, int mmap_prot = PROT_READ, int mmap_flags = MAP_SHARED)
 {
-    if(!readonly)
-        throw std::runtime_error("read-write mode not implemented yet.");
     std::ifstream file;
     file.exceptions(std::ifstream::failbit | std::ifstream::badbit);
     file.open(filepath / "schema.txt", std::ios::in | std::ios::binary);
@@ -288,7 +292,7 @@ auto OpenDataset(const std::filesystem::path& filepath, std::initializer_list<st
                                      ": expected '" + *it +
                                      "', got '" + tmp_type_strs[ii].second + "'");
     }
-    return Dataset<T, Args...>(filepath, tmp_type_strs, 0);
+    return Dataset<T, Args...>(filepath, tmp_type_strs, 0, open_flags, mmap_prot, mmap_flags);
 };
 
 
