@@ -6,14 +6,14 @@ int main()
 {
 
     // Define a schema, it can be used to open multiple datasets with same schema
-    Schema<uint32_t, uint32_t, uint32_t, uint32_t, uint32_t> schema("ClusterID", "frame", "scan", "tof", "intensity");
+    Schema<size_t, uint32_t, double> schema("Index", "SomeInt", "SmeFloat");
 
     // Create a new dataset writer
     auto writer = schema.create_writer("./test_write.mmappet");
     // Write some rows
-    for(uint32_t i = 0; i < 10; ++i)
+    for(size_t i = 0; i < 10; ++i)
     {
-        writer.write_row(i, i*10, i*100, i*1000, i*10000);
+        writer.write_row(i, i*10, i*0.1);
     }
     return 0;
 

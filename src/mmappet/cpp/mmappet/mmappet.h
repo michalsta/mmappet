@@ -10,23 +10,35 @@
 #include <iostream>
 
 
+template<typename T, typename U>
+constexpr bool is_compatible_type()
+{
+    using T_plain = std::decay_t<T>;
+    using U_plain = std::decay_t<U>;
+    return sizeof(T_plain) == sizeof(U_plain) && (
+           (std::is_integral<T_plain>::value && std::is_integral<U_plain>::value &&
+            (std::is_signed<T_plain>::value == std::is_signed<U_plain>::value)) ||
+           (std::is_floating_point<T_plain>::value && std::is_floating_point<U_plain>::value)
+           );
+}
+
 template<typename T>
 #if defined(__cpp_lib_constexpr_string) && __cpp_lib_constexpr_string >= 201907L
 constexpr
 #endif
 std::string get_type_str()
 {
-    if constexpr (std::is_same<T, uint8_t>::value) return "uint8";
-    else if constexpr (std::is_same<T, int8_t>::value) return "int8";
-    else if constexpr (std::is_same<T, uint16_t>::value) return "uint16";
-    else if constexpr (std::is_same<T, int16_t>::value) return "int16";
-    else if constexpr (std::is_same<T, uint32_t>::value) return "uint32";
-    else if constexpr (std::is_same<T, int32_t>::value) return "int32";
-    else if constexpr (std::is_same<T, uint64_t>::value) return "uint64";
-    else if constexpr (std::is_same<T, int64_t>::value) return "int64";
-    else if constexpr (std::is_same<T, float>::value) return "float32";
-    else if constexpr (std::is_same<T, double>::value) return "float64";
-    else static_assert("Unsupported type");
+    if constexpr (is_compatible_type<T, uint8_t>()) return "uint8";
+    else if constexpr (is_compatible_type<T, int8_t>()) return "int8";
+    else if constexpr (is_compatible_type<T, uint16_t>()) return "uint16";
+    else if constexpr (is_compatible_type<T, int16_t>()) return "int16";
+    else if constexpr (is_compatible_type<T, uint32_t>()) return "uint32";
+    else if constexpr (is_compatible_type<T, int32_t>()) return "int32";
+    else if constexpr (is_compatible_type<T, uint64_t>()) return "uint64";
+    else if constexpr (is_compatible_type<T, int64_t>()) return "int64";
+    else if constexpr (is_compatible_type<T, float>()) return "float32";
+    else if constexpr (is_compatible_type<T, double>()) return "float64";
+    else static_assert(false, "Unsupported type");
 }
 
 template<typename T>
@@ -35,9 +47,22 @@ class MMappedData {
     int fileDescriptor = -1;
     size_t dataSize = 0;
     size_t no_elements = 0;
+    const std::filesystem::path filepath;
+    int open_flags;
+    int mmap_prot;
+    int mmap_flags;
 
 public:
-    MMappedData(const std::filesystem::path& filepath, int open_flags = O_RDONLY, int mmap_prot = PROT_READ, int mmap_flags = MAP_SHARED)
+    MMappedData(const std::filesystem::path& filepath, int open_flags = O_RDONLY, int mmap_prot = PROT_READ, int mmap_flags = MAP_SHARED) :
+        filepath(filepath),
+        open_flags(open_flags),
+        mmap_prot(mmap_prot),
+        mmap_flags(mmap_flags)
+    {
+        open_and_map(open_flags, mmap_prot, mmap_flags);
+    }
+
+    void open_and_map(int open_flags, int mmap_prot, int mmap_flags)
     {
         dataSize = std::filesystem::file_size(filepath);
         if(dataSize % sizeof(T) != 0)
@@ -62,7 +87,7 @@ public:
             throw std::runtime_error("Failed to mmap file: " + filepath.string() + ", error: " + std::strerror(errno));
         }
     }
-    ~MMappedData()
+    void close_and_unmap()
     {
         if (mappedData)
         {
@@ -72,6 +97,19 @@ public:
         {
             close(fileDescriptor);
         }
+    }
+
+    void resize(size_t new_no_elements)
+    {
+        close_and_unmap();
+        dataSize = new_no_elements * sizeof(T);
+        std::filesystem::resize_file(filepath, dataSize);
+        open_and_map(open_flags, mmap_prot, mmap_flags);
+    }
+
+    ~MMappedData()
+    {
+        close_and_unmap();
     }
 
     MMappedData(const MMappedData&) = delete;
