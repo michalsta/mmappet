@@ -20,7 +20,7 @@ testing = ["pytest"]
 mmappet_show = "mmappet.scripts.mmappet_show:main"
 
 [tool.setuptools]
-package-data = {"mmappet" = ["mmappet_cpp/mmappet/*.h", "mmappet_cpp/mmappet/*.hpp"]}
+package-data = {"mmappet" = ["cpp/mmappet/*.h", "cpp/mmappet/*.hpp"]}
 include-package-data = false
 
 [tool.setuptools.package-dir]

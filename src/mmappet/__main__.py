@@ -30,7 +30,7 @@ if __name__ == "__main__":
     if args.path:
         print(Path(__file__).parent.resolve())
     elif args.include:
-        include_path = Path(__file__).parent.resolve() / "mmappet_cpp"
+        include_path = Path(__file__).parent.resolve() / "cpp"
         print(include_path)
     else:
         print(
