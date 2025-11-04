@@ -48,6 +48,12 @@ public:
         if (fileDescriptor == -1)
             throw std::runtime_error("Failed to open file: " + filepath.string() + ", error: " + std::strerror(errno));
 
+        if (no_elements == 0) {
+            // Empty dataset, avoid mmap call, which would fail
+            mappedData = nullptr;
+            return;
+        }
+
         mappedData = static_cast<T*>(mmap(nullptr, dataSize, mmap_prot, mmap_flags, fileDescriptor, 0));
         if (mappedData == MAP_FAILED)
         {
@@ -89,6 +95,10 @@ public:
 
     inline size_t size() const {
         return no_elements;
+    }
+
+    inline T* data() const {
+        return mappedData;
     }
 };
 
