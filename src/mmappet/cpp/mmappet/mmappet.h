@@ -354,7 +354,10 @@ class Schema
     template<size_t... Is>
     auto open_dataset_impl(const std::filesystem::path& filepath, bool readonly, std::index_sequence<Is...>)
     {
-        return OpenDataset<T, Args...>(filepath, {column_names[Is]...}, readonly);
+        int open_flags = readonly ? O_RDONLY : O_RDWR;
+        int mmap_prot = readonly ? PROT_READ : (PROT_READ | PROT_WRITE);
+        int mmap_flags = MAP_SHARED;
+        return OpenDataset<T, Args...>(filepath, {column_names[Is]...}, open_flags, mmap_prot, mmap_flags);
     }
 
     template<size_t idx, typename U, typename... Rest>
