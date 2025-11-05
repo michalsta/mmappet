@@ -2,7 +2,7 @@ INCLUDE_FLAGS=-I../../src/mmappet/cpp
 WARN_FLAGS=-Wall -Wextra -Wpedantic
 
 
-all: reader_example writer_example
+all: reader_example writer_example mmap_writer
 
 %: %.cpp ../../src/mmappet/cpp/mmappet/mmappet.h
 	$(CXX) $(INCLUDE_FLAGS) $(WARN_FLAGS) -g -Og -o $@ $< -std=c++17

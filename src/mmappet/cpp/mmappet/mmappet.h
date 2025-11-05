@@ -160,6 +160,11 @@ public:
         return std::tuple<>();
     }
 
+    void resize(size_t)
+    {
+        // Base case: do nothing
+    }
+
 };
 
 template<typename T, typename... Args>
@@ -209,6 +214,12 @@ public:
     inline size_t size() const
     {
         return data.size();
+    }
+
+    void resize(size_t new_size)
+    {
+        data.resize(new_size);
+        next_dataset.resize(new_size);
     }
 
     auto move_columns()
