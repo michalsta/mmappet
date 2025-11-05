@@ -226,14 +226,14 @@ public:
         Dataset<T, Args...>* dataset;
     public:
         Iterator(size_t idx, Dataset<T, Args...>* ds) : index(idx), dataset(ds) {};
-        std::tuple<T, Args...> operator*() {
+        inline std::tuple<T, Args...> operator*() {
             return (*dataset)[index];
         }
-        Iterator& operator++() {
+        inline Iterator& operator++() {
             ++index;
             return *this;
         }
-        bool operator!=(const Iterator& other) const {
+        inline bool operator!=(const Iterator& other) const {
             return index != other.index;
         }
     };
@@ -261,9 +261,9 @@ template<typename T, typename... Args>
 auto OpenDataset(const std::filesystem::path& filepath, std::initializer_list<std::string> column_names, int open_flags = O_RDONLY, int mmap_prot = PROT_READ, int mmap_flags = MAP_SHARED)
 {
     std::ifstream file;
-    file.exceptions(std::ifstream::failbit | std::ifstream::badbit);
     file.open(filepath / "schema.txt", std::ios::in | std::ios::binary);
-    file.exceptions(std::ifstream::goodbit);
+    if(!file.is_open())
+        throw std::runtime_error("Failed to open schema file: " + (filepath / "schema.txt").string() + ", error: " + std::strerror(errno));
 
     std::vector<std::pair<std::string, std::string>> tmp_type_strs;
     std::string s;
@@ -276,8 +276,6 @@ auto OpenDataset(const std::filesystem::path& filepath, std::initializer_list<st
             tmp_type_strs.emplace_back(s, "");
         else
             tmp_type_strs.emplace_back(s.substr(0, pos), s.substr(pos + 1));
-
-        std::cerr << "Read type string: " << s << std::endl;
     }
     file.close();
 
@@ -329,8 +327,9 @@ public:
         file(),
         next_writer(filepath, col_nr + 1)
     {
-        file.exceptions(std::ofstream::failbit | std::ofstream::badbit);
         file.open(filepath / (std::to_string(col_nr) + ".bin"), std::ios::out | std::ios::binary | std::ios::trunc);
+        if(!file.is_open())
+            throw std::runtime_error("Failed to open file for writing: " + (filepath / (std::to_string(col_nr) + ".bin")).string() + ", error: " + std::strerror(errno));
     }
 
     void write_row(const T& value, const Args&... args)
@@ -398,8 +397,9 @@ class Schema
     void write_schema_file(const std::filesystem::path& filepath) const
     {
         std::ofstream file;
-        file.exceptions(std::ofstream::failbit | std::ofstream::badbit);
         file.open(filepath, std::ios::out |  std::ios::trunc | std::ios::binary);
+        if(!file.is_open())
+            throw std::runtime_error("Failed to open schema file for writing: " + filepath.string() + ", error: " + std::strerror(errno));
         file << schema_string();
         file.close();
     }

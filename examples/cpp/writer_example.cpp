@@ -6,10 +6,10 @@ int main()
 {
 
     // Define a schema, it can be used to open multiple datasets with same schema
-    Schema<size_t, uint32_t, double> schema("Index", "SomeInt", "SmeFloat");
+    Schema<size_t, uint32_t, double> schema("Index", "SomeInt", "SomeFloat");
 
     // Create a new dataset writer
-    auto writer = schema.create_writer("./test_write.mmappet");
+    auto writer = schema.create_writer("./test.mmappet");
     // Write some rows
     for(size_t i = 0; i < 10; ++i)
     {

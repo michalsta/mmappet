@@ -14,7 +14,7 @@ dependencies = [
 [project.optional-dependencies]
 polars = ["polars"]
 pyarrow = ["pyarrow"]
-testing = ["pytest", "cppyy"]
+testing = ["pytest"]
 
 [project.scripts]
 mmappet_show = "mmappet.scripts.mmappet_show:main"
