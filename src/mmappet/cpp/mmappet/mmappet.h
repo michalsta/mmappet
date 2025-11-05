@@ -351,14 +351,6 @@ class Schema
 {
     std::vector<std::string> column_names;
 
-    template<size_t... Is>
-    auto open_dataset_impl(const std::filesystem::path& filepath, bool readonly, std::index_sequence<Is...>)
-    {
-        int open_flags = readonly ? O_RDONLY : O_RDWR;
-        int mmap_prot = readonly ? PROT_READ : (PROT_READ | PROT_WRITE);
-        int mmap_flags = MAP_SHARED;
-        return OpenDataset<T, Args...>(filepath, {column_names[Is]...}, open_flags, mmap_prot, mmap_flags);
-    }
 
     template<size_t idx, typename U, typename... Rest>
     std::string schema_string_impl() const
@@ -375,6 +367,15 @@ class Schema
         }
     }
 
+    template<size_t... Is>
+    auto open_dataset_impl(const std::filesystem::path& filepath,
+                           int open_flags,
+                           int mmap_prot,
+                           int mmap_flags,
+                           std::index_sequence<Is...>)
+    {
+        return OpenDataset<T, Args...>(filepath, {column_names[Is]...}, open_flags, mmap_prot, mmap_flags);
+    }
 
     public:
     template<typename... Strings>
@@ -383,7 +384,18 @@ class Schema
 
     auto open_dataset(const std::filesystem::path& filepath, bool readonly = true)
     {
-        return open_dataset_impl(filepath, readonly, std::make_index_sequence<sizeof...(Args)+1>{});
+        int open_flags = readonly ? O_RDONLY : O_RDWR;
+        int mmap_prot = readonly ? PROT_READ : (PROT_READ | PROT_WRITE);
+        int mmap_flags = MAP_SHARED;
+        return open_dataset_flags(filepath, open_flags, mmap_prot, mmap_flags);
+    }
+
+    auto open_dataset_flags(const std::filesystem::path& filepath,
+                           int open_flags,
+                           int mmap_prot,
+                           int mmap_flags)
+    {
+        return open_dataset_impl(filepath, open_flags, mmap_prot, mmap_flags, std::make_index_sequence<sizeof...(Args)+1>{});
     }
 
     auto get_columns(const std::filesystem::path& filepath, bool readonly = true)
