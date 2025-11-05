@@ -16,7 +16,7 @@ int main()
         std::cout << idx << "\t" << some_int << "\t" << some_float << "\n";
     }
 
-    // Or get individual columns
+    // Or get individual columns. The same schema can be reused to open multiple datasets (or open same dataset multiple times)
     auto [C1, C2, C3] = schema.get_columns("./test.mmappet");
     // Print dataset again, using columnar access
     for(size_t i = 0; i < C1.size(); ++i)
@@ -25,8 +25,8 @@ int main()
     }
 
     // To open multiple datasets with same schema:
-    auto [D1_C1, D1_C2, D1_C3] = schema.get_columns("/Users/mist/git/massimo_cpp/test1.mmappet");
-    auto [D2_C1, D2_C2, D2_C3] = schema.get_columns("/Users/mist/git/massimo_cpp/test2.mmappet");
+    // auto [D1_C1, D1_C2, D1_C3] = schema.get_columns("/path/somewhere/test1.mmappet");
+    // auto [D2_C1, D2_C2, D2_C3] = schema.get_columns("/path/somewhere/test2.mmappet");
 
     // ... use D1_C*, D2_C* ...
 }

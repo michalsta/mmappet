@@ -180,8 +180,8 @@ public:
             int mmap_prot = PROT_READ,
             int mmap_flags = MAP_SHARED
         ) :
-        type_str(type_strs.back().first),
-        column_name(type_strs.back().second),
+        type_str(type_strs[col_nr].first),
+        column_name(type_strs[col_nr].second),
         column_number(col_nr),
         data(filepath / (std::to_string(col_nr) + ".bin"), open_flags, mmap_prot, mmap_flags),
         next_dataset(filepath, type_strs, col_nr + 1, open_flags, mmap_prot, mmap_flags)
