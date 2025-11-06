@@ -24,7 +24,7 @@ int main()
         // Immediately close the writer as it goes out of scope, we just want to create an empty dataset
     }
 
-    // Re-pen a dataset creating a read-write mapping
+    // Re-open a dataset creating a read-write mapping (readonly = false)
     auto dataset = schema.open_dataset("./test_mmapped.mmappet", false);
     dataset.resize(16); // Resize to 16 rows. These will be zero-filled initially. If the backing filesystem supports sparse files, this will not allocate disk space yet.
 
