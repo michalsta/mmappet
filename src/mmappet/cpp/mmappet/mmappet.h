@@ -1,13 +1,23 @@
+#pragma once
+
+#include <cstdint>
+#include <cstddef>
+#include <type_traits>
 #include <string>
+#include <string_view>
 #include <fstream>
 #include <filesystem>
 #include <vector>
+#include <tuple>
+#include <initializer_list>
+#include <utility>
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdexcept>
 #include <cstring>
-#include <iostream>
+#include <cerrno>
+#include <cassert>
 
 
 template<typename T, typename U>
@@ -79,23 +89,27 @@ public:
             return;
         }
 
-        mappedData = static_cast<T*>(mmap(nullptr, dataSize, mmap_prot, mmap_flags, fileDescriptor, 0));
-        if (mappedData == MAP_FAILED)
+        void* raw = mmap(nullptr, dataSize, mmap_prot_, mmap_flags_, fileDescriptor, 0);
+        if (raw == MAP_FAILED)
         {
             close(fileDescriptor);
             fileDescriptor = -1;
             throw std::runtime_error("Failed to mmap file: " + filepath.string() + ", error: " + std::strerror(errno));
         }
+        mappedData = static_cast<T*>(raw);
     }
-    void close_and_unmap()
+
+    void close_and_unmap() noexcept
     {
         if (mappedData)
         {
             munmap(mappedData, dataSize);
+            mappedData = nullptr;
         }
         if (fileDescriptor != -1)
         {
             close(fileDescriptor);
+            fileDescriptor = -1;
         }
     }
 
@@ -107,7 +121,7 @@ public:
         open_and_map(open_flags, mmap_prot, mmap_flags);
     }
 
-    ~MMappedData()
+    ~MMappedData() noexcept
     {
         close_and_unmap();
     }
@@ -125,21 +139,21 @@ public:
         other.dataSize = 0;
         other.no_elements = 0;
     }
-    MMappedData& operator=(MMappedData&& other) noexcept = delete;
+    MMappedData& operator=(MMappedData&&) noexcept = delete;
 
     inline T& operator[](size_t index) const {
+
         return mappedData[index];
     }
 
-    inline size_t size() const {
+    inline size_t size() const noexcept {
         return no_elements;
     }
 
-    inline T* data() const {
+    inline T* data() const noexcept {
         return mappedData;
     }
 };
-
 
 
 template<typename... Args>
@@ -164,7 +178,6 @@ public:
     {
         // Base case: do nothing
     }
-
 };
 
 template<typename T, typename... Args>
@@ -211,7 +224,7 @@ public:
         }
     }
 
-    inline size_t size() const
+    inline size_t size() const noexcept
     {
         return data.size();
     }
@@ -255,10 +268,9 @@ public:
     Iterator end() {
         return Iterator(data.size(), this);
     }
-
 };
 
-std::pair<std::string, std::string>
+static inline std::pair<std::string, std::string>
 split_first_space(const std::string& s) {
     size_t pos = s.find(' ');
     if (pos == std::string::npos) {
@@ -302,7 +314,7 @@ auto OpenDataset(const std::filesystem::path& filepath, std::initializer_list<st
                                      "', got '" + tmp_type_strs[ii].second + "'");
     }
     return Dataset<T, Args...>(filepath, tmp_type_strs, 0, open_flags, mmap_prot, mmap_flags);
-};
+}
 
 
 
@@ -320,6 +332,7 @@ std::string schema_string_impl(const std::vector<std::string>& column_names)
         return result;
     }
 }
+
 template<typename... Args>
 class DatasetWriter {
 public:
@@ -436,5 +449,4 @@ class Schema
         write_schema_file(filepath / "schema.txt");
         return DatasetWriter<T, Args...>(filepath, 0);
     }
-
 };
