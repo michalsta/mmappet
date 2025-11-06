@@ -89,7 +89,7 @@ public:
             return;
         }
 
-        void* raw = mmap(nullptr, dataSize, mmap_prot_, mmap_flags_, fileDescriptor, 0);
+        void* raw = mmap(nullptr, dataSize, mmap_prot, mmap_flags, fileDescriptor, 0);
         if (raw == MAP_FAILED)
         {
             close(fileDescriptor);
