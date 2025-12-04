@@ -18,6 +18,7 @@
 #include <cstring>
 #include <cerrno>
 #include <cassert>
+#include <span>
 
 
 template<typename T, typename U>
@@ -48,7 +49,7 @@ std::string get_type_str()
     else if constexpr (is_compatible_type<T, int64_t>()) return "int64";
     else if constexpr (is_compatible_type<T, float>()) return "float32";
     else if constexpr (is_compatible_type<T, double>()) return "float64";
-    else static_assert(false, "Unsupported type");
+    else return "bytes" + std::to_string(sizeof(T));
 }
 
 template<typename T>
@@ -371,6 +372,77 @@ public:
 
 
 template<typename T, typename... Args>
+class IndexedDataset {
+    Dataset<T, Args...> dataset;
+    Dataset<size_t> index_data;
+    size_t* index_ptr;
+public:
+    IndexedDataset(Dataset<T, Args...>&& ds,
+                   Dataset<size_t>&& idx_data) :
+        dataset(std::move(ds)),
+        index_data(std::move(idx_data)),
+        index_ptr(index_data.template get_column<0>().data())
+    {}
+
+    std::tuple<std::span<T>, std::span<Args>...> get_group(size_t group_index)
+    {
+        if(group_index >= number_of_groups())
+            throw std::out_of_range("Group index out of range in IndexedDataset::get_group");
+        size_t start = index_ptr[group_index];
+        size_t end = index_ptr[group_index + 1];
+        return get_group_impl<0, T, Args...>(start, end);
+    }
+
+    size_t number_of_groups() const noexcept {
+        return index_data.size() > 0 ? index_data.size() - 1 : 0;
+    }
+
+private:
+    template<size_t idx, typename U, typename... Rest>
+    auto get_group_impl(size_t start, size_t end)
+    {
+        if constexpr (sizeof...(Rest) == 0)
+        {
+            return std::make_tuple(std::span<U>(dataset.template get_column<idx>().data() + start, end - start));
+        }
+        else
+        {
+            return std::tuple_cat(std::make_tuple(std::span<U>(dataset.template get_column<idx>().data() + start, end - start)),
+                                  get_group_impl<idx + 1, Rest...>(start, end));
+        }
+    }
+};
+
+
+
+template<typename T, typename... Args>
+class IndexedWriter {
+    DatasetWriter<T, Args...> writer;
+    DatasetWriter<size_t> index_writer;
+    size_t current_index = 0;
+public:
+    IndexedWriter(DatasetWriter<T, Args...>&& w,
+                  DatasetWriter<size_t>&& idx_w) :
+        writer(std::move(w)),
+        index_writer(std::move(idx_w))
+    {
+        // Start with index 0
+        index_writer.write_row(0);
+    }
+    void write_group(size_t n, const T* values, const Args*... args)
+    {
+        writer.write_rows(n, values, args...);
+        current_index += n;
+        index_writer.write_row(current_index);
+    }
+    void write_group(const std::span<T>& values, const std::span<Args>&... args)
+    {
+        write_group(values.size(), values.data(), args.data()...);
+    }
+};
+
+
+template<typename T, typename... Args>
 class Schema
 {
     std::vector<std::string> column_names;
@@ -422,6 +494,17 @@ class Schema
         return open_dataset_impl(filepath, open_flags, mmap_prot, mmap_flags, std::make_index_sequence<sizeof...(Args)+1>{});
     }
 
+    auto open_indexed_dataset(const std::filesystem::path& filepath, bool readonly = true)
+    {
+        int open_flags = readonly ? O_RDONLY : O_RDWR;
+        int mmap_prot = readonly ? PROT_READ : (PROT_READ | PROT_WRITE);
+        int mmap_flags = MAP_SHARED;
+        auto ds = open_dataset_flags(filepath, open_flags, mmap_prot, mmap_flags);
+        auto index_ds = OpenDataset<size_t>(filepath / "index", {"Index"}, O_RDONLY, PROT_READ, MAP_SHARED);
+        return IndexedDataset<T, Args...>(std::move(ds), std::move(index_ds));
+    }
+
+
     auto get_columns(const std::filesystem::path& filepath, bool readonly = true)
     {
         auto dataset = open_dataset(filepath, readonly);
@@ -449,4 +532,13 @@ class Schema
         write_schema_file(filepath / "schema.txt");
         return DatasetWriter<T, Args...>(filepath, 0);
     }
+
+    IndexedWriter<T, Args...> create_indexed_writer(const std::filesystem::path& filepath)
+    {
+        auto writer = create_writer(filepath);
+        Schema<size_t> index_schema("Index");
+        DatasetWriter<size_t> index_writer = index_schema.create_writer(filepath / "index");
+        return IndexedWriter<T, Args...>(std::move(writer), std::move(index_writer));
+    }
+
 };
