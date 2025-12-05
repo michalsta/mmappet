@@ -1,4 +1,5 @@
 #include <iostream>
+#define MMAPPET_USE_UNIX_FILEOPS
 #include <mmappet/mmappet.h>
 
 

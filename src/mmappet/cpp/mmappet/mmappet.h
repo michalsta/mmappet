@@ -19,6 +19,9 @@
 #include <cerrno>
 #include <cassert>
 #include <span>
+#ifdef MMAPPET_USE_UNIX_FILEOPS
+#include <sys/types.h>
+#endif
 
 
 template<typename T, typename U>
@@ -344,28 +347,52 @@ public:
 
 template<typename T, typename... Args>
 class DatasetWriter<T, Args...> {
+    #ifdef MMAPPET_USE_UNIX_FILEOPS
+    int file_descriptor;
+    #else
     std::ofstream file;
+    #endif
     DatasetWriter<Args...> next_writer;
 
 public:
     DatasetWriter(const std::filesystem::path& filepath, size_t col_nr) :
+        #if !defined(MMAPPET_USE_UNIX_FILEOPS)
         file(),
+        #endif
         next_writer(filepath, col_nr + 1)
     {
+        #ifdef MMAPPET_USE_UNIX_FILEOPS
+        file_descriptor = open((filepath / (std::to_string(col_nr) + ".bin")).c_str(), O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+        if (file_descriptor == -1)
+            throw std::runtime_error("Failed to open file for writing: " + (filepath / (std::to_string(col_nr) + ".bin")).string() + ", error: " + std::strerror(errno));
+        #else
         file.open(filepath / (std::to_string(col_nr) + ".bin"), std::ios::out | std::ios::binary | std::ios::trunc);
         if(!file.is_open())
             throw std::runtime_error("Failed to open file for writing: " + (filepath / (std::to_string(col_nr) + ".bin")).string() + ", error: " + std::strerror(errno));
+        #endif
     }
 
     void write_row(const T& value, const Args&... args)
     {
+        #ifdef MMAPPET_USE_UNIX_FILEOPS
+        ssize_t bytes_written = write(file_descriptor, reinterpret_cast<const char*>(&value), sizeof(T));
+        if (bytes_written != sizeof(T))
+            throw std::runtime_error("Failed to write data to file: " + std::to_string(file_descriptor) + ", error: " + std::strerror(errno));
+        #else
         file.write(reinterpret_cast<const char*>(&value), sizeof(T));
+        #endif
         next_writer.write_row(args...);
     }
 
     void write_rows(size_t n, const T* values, const Args*... args)
     {
+        #ifdef MMAPPET_USE_UNIX_FILEOPS
+        ssize_t bytes_written = write(file_descriptor, reinterpret_cast<const char*>(values), n * sizeof(T));
+        if (bytes_written != static_cast<ssize_t>(n * sizeof(T)))
+            throw std::runtime_error("Failed to write data to file: " + std::to_string(file_descriptor) + ", error: " + std::strerror(errno));
+        #else
         file.write(reinterpret_cast<const char*>(values), n * sizeof(T));
+        #endif
         next_writer.write_rows(n, args...);
     }
 };
