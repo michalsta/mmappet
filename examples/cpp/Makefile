@@ -6,3 +6,6 @@ all: reader_example writer_example mmap_writer indexed_writer_example indexed_re
 
 %: %.cpp ../../src/mmappet/cpp/mmappet/mmappet.h
 	$(CXX) $(INCLUDE_FLAGS) $(WARN_FLAGS) -g -Og -o $@ $< -std=c++20
+
+
+

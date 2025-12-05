@@ -503,7 +503,7 @@ class Schema
     public:
     template<typename... Strings>
     Schema(const Strings&... col_names)
-    { (column_names.push_back(col_names), ...);};
+    { (column_names.push_back(col_names), ...);}
 
     auto open_dataset(const std::filesystem::path& filepath, bool readonly = true)
     {
@@ -527,7 +527,7 @@ class Schema
         int mmap_prot = readonly ? PROT_READ : (PROT_READ | PROT_WRITE);
         int mmap_flags = MAP_SHARED;
         auto ds = open_dataset_flags(filepath, open_flags, mmap_prot, mmap_flags);
-        auto index_ds = OpenDataset<size_t>(filepath / "index", {"Index"}, O_RDONLY, PROT_READ, MAP_SHARED);
+        auto index_ds = OpenDataset<size_t>(filepath / "index.mmappet", {"Index"}, O_RDONLY, PROT_READ, MAP_SHARED);
         return IndexedDataset<T, Args...>(std::move(ds), std::move(index_ds));
     }
 
@@ -564,7 +564,7 @@ class Schema
     {
         auto writer = create_writer(filepath);
         Schema<size_t> index_schema("Index");
-        DatasetWriter<size_t> index_writer = index_schema.create_writer(filepath / "index");
+        DatasetWriter<size_t> index_writer = index_schema.create_writer(filepath / "index.mmappet");
         return IndexedWriter<T, Args...>(std::move(writer), std::move(index_writer));
     }
 
