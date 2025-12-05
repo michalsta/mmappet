@@ -476,7 +476,7 @@ class Schema
     public:
     template<typename... Strings>
     Schema(const Strings&... col_names)
-    { (column_names.push_back(col_names), ...);};
+    { (column_names.push_back(col_names), ...);}
 
     auto open_dataset(const std::filesystem::path& filepath, bool readonly = true)
     {
