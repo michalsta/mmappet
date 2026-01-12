@@ -1,3 +1,5 @@
+import numpy as np
+
 from .mmappet import open_dataset_dct
 from pathlib import Path
 
