@@ -1,0 +1,60 @@
+2026-01-23: Type-erased DynDataset wrapper
+
+Problem:
+  Dataset<float, int32_t> forces template types through all downstream code.
+  Goal: specify types once at open site, then work with a non-templated interface.
+
+What was done:
+
+1. Created gits/mmappet/src/mmappet/cpp/mmappet/mmappet_dyn.h
+
+   New header implementing three components:
+
+   - element_size_from_type_str(): maps type strings ("float32", "int32", etc.)
+     to byte sizes (4, 4, etc.).
+
+   - Column (non-templated, move-only): wraps one mmap'd .bin file as raw bytes.
+     RAII: munmap + close in destructor. Provides name(), type_str(), size(),
+     element_size(), raw_data(), and as<T>() for typed access with runtime check.
+
+   - DynDataset (non-templated, move-only): holds std::vector<Column>.
+     Provides operator[](size_t), operator[](string_view) for name lookup,
+     num_columns(), num_rows(), begin()/end() for iteration.
+
+   - TypedDataset<T, Args...> : public DynDataset: adds typed_columns()
+     returning std::tuple<std::span<const T>, std::span<const Args>...>.
+     Static factory open(path, col_names) reads schema.txt, validates types
+     and names match template args, mmaps each .bin into a Column.
+
+   Includes mmappet.h for get_type_str<T>() and split_first_space().
+
+2. Created gits/examples/test_dyn_dataset.cpp
+
+   Test program demonstrating:
+   - TypedDataset<float, int32_t>::open() with column name validation
+   - Structured bindings via typed_columns()
+   - Passing TypedDataset to a function taking DynDataset& (no templates)
+   - Column lookup by name
+   - Storing in std::vector<std::unique_ptr<DynDataset>>
+
+3. Modified gits/Makefile
+
+   Added DYN_SRC, DYN_BIN variables and build rule.
+   Added .PHONY target "test_dyn_dataset" for convenience.
+   Added $(DYN_BIN) to the "all" target.
+
+4. Updated SPECIFICATION
+
+   Added test_dyn_dataset to the project tree (build/ and examples/).
+   Added mmappet_dyn.h to the mmappet/src tree.
+   Documented the Column, DynDataset, and TypedDataset interfaces.
+
+Build & test:
+  cd gits
+  make                           # builds all three binaries
+  ./build/test_dataset_writer    # creates example/dataset.mmappet/
+  ./build/test_dyn_dataset       # opens dataset via TypedDataset, prints values
+
+One compile fix applied:
+  Used .template as<U>() in typed_columns_impl() because columns_[idx]
+  is a dependent expression (idx is a non-type template parameter).
