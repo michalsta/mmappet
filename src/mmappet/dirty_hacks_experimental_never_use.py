@@ -1,6 +1,8 @@
 import numpy as np
 
+from .mmappet import _read_schema_tbl
 from .mmappet import open_dataset_dct
+from .mmappet import open_new_dataset_dct
 from pathlib import Path
 
 
@@ -26,3 +28,13 @@ def append_empty_columns(folder: str | Path, **name2dtype):
                 file.truncate(nrows * column_size)
             column_number += 1
             schema.write(f"{dtype} {name}")
+
+
+def crop_dataset(
+    input_dataset_path: str | Path, output_dataset_path: str | Path, rows_cnt: int
+) -> None:
+    in_data = open_dataset_dct(input_dataset_path)
+    data_schema = _read_schema_tbl(input_dataset_path)
+    out_data = open_new_dataset_dct(output_dataset_path, data_schema, rows_cnt)
+    for colname, values in in_data.items():
+        out_data[colname][:] = values[:rows_cnt]
