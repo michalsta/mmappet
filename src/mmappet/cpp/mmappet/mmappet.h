@@ -369,6 +369,7 @@ public:
         file.open(filepath / (std::to_string(col_nr) + ".bin"), std::ios::out | std::ios::binary | std::ios::trunc);
         if(!file.is_open())
             throw std::runtime_error("Failed to open file for writing: " + (filepath / (std::to_string(col_nr) + ".bin")).string() + ", error: " + std::strerror(errno));
+        file.exceptions(std::ofstream::failbit | std::ofstream::badbit);
         #endif
     }
 
