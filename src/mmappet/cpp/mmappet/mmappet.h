@@ -184,6 +184,41 @@ public:
     }
 };
 
+template<typename T>
+MMappedData<T> OpenColumn(const std::filesystem::path& filepath, const std::string column_name, int open_flags = O_RDONLY, int mmap_prot = PROT_READ, int mmap_flags = MAP_SHARED)
+{
+    std::ifstream file;
+    file.open(filepath / "schema.txt", std::ios::in | std::ios::binary);
+    if(!file.is_open())
+        throw std::runtime_error("Failed to open schema file: " + (filepath / "schema.txt").string() + ", error: " + std::strerror(errno));
+
+    std::string s;
+    size_t col_nr = 0;
+    bool found = false;
+    while(std::getline(file, s))
+    {
+        if(s.empty())
+            continue;
+        auto [type_str, col_name] = split_first_space(s);
+        if(col_name == column_name)
+        {
+            if(type_str != get_type_str<T>())
+                throw std::runtime_error("Type mismatch for column '" + column_name +
+                                         "': expected " + get_type_str<T>() +
+                                         ", got " + type_str);
+            found = true;
+            break;
+        }
+        ++col_nr;
+    }
+    file.close();
+
+    if(!found)
+        throw std::runtime_error("Column '" + column_name + "' not found in schema file: " + (filepath / "schema.txt").string());
+
+    return MMappedData<T>(filepath / (std::to_string(col_nr) + ".bin"), open_flags, mmap_prot, mmap_flags);
+}
+
 template<typename T, typename... Args>
 class Dataset<T, Args...>
 {
