@@ -185,7 +185,14 @@ public:
 };
 
 static inline std::pair<std::string, std::string>
-split_first_space(const std::string& s);
+split_first_space(const std::string& s) {
+    size_t pos = s.find(' ');
+    if (pos == std::string::npos) {
+        return {s, ""};
+    }
+    return { s.substr(0, pos), s.substr(pos + 1) };
+}
+
 
 template<typename T>
 MMappedData<T> OpenColumn(const std::filesystem::path& filepath, const std::string column_name, int open_flags = O_RDONLY, int mmap_prot = PROT_READ, int mmap_flags = MAP_SHARED)
@@ -311,15 +318,6 @@ public:
         return Iterator(data.size(), this);
     }
 };
-
-static inline std::pair<std::string, std::string>
-split_first_space(const std::string& s) {
-    size_t pos = s.find(' ');
-    if (pos == std::string::npos) {
-        return {s, ""};
-    }
-    return { s.substr(0, pos), s.substr(pos + 1) };
-}
 
 
 template<typename T, typename... Args>
