@@ -184,6 +184,9 @@ public:
     }
 };
 
+static inline std::pair<std::string, std::string>
+split_first_space(const std::string& s);
+
 template<typename T>
 MMappedData<T> OpenColumn(const std::filesystem::path& filepath, const std::string column_name, int open_flags = O_RDONLY, int mmap_prot = PROT_READ, int mmap_flags = MAP_SHARED)
 {
