@@ -226,6 +226,10 @@ def open_dataset_dct(path: PathLike, read_write: bool = False, **kwargs):
     for idx, column_name in enumerate(df):
         col_dtype = df[column_name].values.dtype
         fd = os.open(path / f"{idx}.bin", open_flags)
+        if os.fstat(fd).st_size == 0:
+            os.close(fd)
+            new_data[column_name] = np.empty(0, dtype=col_dtype)
+            continue
         mmap_obj = do_mmap(fd)
         new_data[column_name] = np.frombuffer(mmap_obj, dtype=col_dtype)
 
