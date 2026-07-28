@@ -4,20 +4,25 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mmappet"
-version = "0.1.1"
-description = "Appendable, mmappable format for DataFrames on disk"
+version = "0.2.0"
+description = "Appendable, mmap-backed NumPy column storage"
+readme = "README.md"
+requires-python = ">=3.10"
 dependencies = [
     "numpy",
-    "pandas",
 ]
 
 [project.optional-dependencies]
+pandas = ["pandas"]
 polars = ["polars"]
 pyarrow = ["pyarrow"]
-testing = ["pytest"]
+testing = ["pytest", "pandas"]
 
 [project.scripts]
 mmappet_show = "mmappet.scripts.mmappet_show:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.setuptools]
 package-data = {"mmappet" = ["cpp/mmappet/*.h", "cpp/mmappet/*.hpp"]}

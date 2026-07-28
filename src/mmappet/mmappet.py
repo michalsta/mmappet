@@ -1,278 +1,361 @@
-from types import SimpleNamespace
-from typing import Union
-from pathlib import Path
-import os, mmap
+from __future__ import annotations
+
+import mmap
+import os
+from collections.abc import Mapping, Sequence
 from os import PathLike
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, BinaryIO
+
 import numpy as np
 import numpy.typing as npt
-import pandas as pd
+
+Schema = dict[str, np.dtype]
+SchemaLike = Mapping[str, Any]
+PathType = str | PathLike[str]
 
 
-def schema_to_str(schema: pd.DataFrame):
-    ret = []
-    for colname in schema:
-        ret.append(f"{schema[colname].values.dtype} {colname}")
-    return "\n".join(ret)
+def _normalize_schema(schema: SchemaLike) -> Schema:
+    if not isinstance(schema, Mapping):
+        raise TypeError("schema must be a mapping of column names to NumPy dtypes")
+    normalized: Schema = {}
+    for name, value in schema.items():
+        if not isinstance(name, str) or not name:
+            raise TypeError("schema column names must be non-empty strings")
+        try:
+            normalized[name] = np.dtype(value)
+        except TypeError:
+            if not hasattr(value, "dtype"):
+                raise
+            normalized[name] = np.dtype(value.dtype)
+    if not normalized:
+        raise ValueError("schema must contain at least one column")
+    return normalized
 
 
-def str_to_schema(s: str):
-    ret = {}
-    for line in s.splitlines():
-        dtype_str, colname = line.split(maxsplit=1)
-        ret[colname] = np.empty(dtype=np.dtype(dtype_str), shape=0)
-    return pd.DataFrame(ret)
+def schema_to_str(schema: SchemaLike) -> str:
+    """Serialize an ordered mapping of column names to NumPy dtypes."""
+
+    return "\n".join(
+        f"{dtype} {name}" for name, dtype in _normalize_schema(schema).items()
+    )
 
 
-def write_schema(schema: pd.DataFrame, path: PathLike):
-    with open(Path(path) / "schema.txt", "wt") as f:
-        f.write(schema_to_str(schema))
+def str_to_schema(value: str) -> Schema:
+    """Parse a schema string into an ordered dtype mapping."""
+
+    schema: Schema = {}
+    for line in value.splitlines():
+        dtype_string, column_name = line.split(maxsplit=1)
+        schema[column_name] = np.dtype(dtype_string)
+    if not schema:
+        raise ValueError("schema must contain at least one column")
+    return schema
 
 
-def _read_schema_tbl(path: PathLike):
-    with open(Path(path) / "schema.txt", "rt") as f:
-        return str_to_schema(f.read())
+def write_schema(schema: SchemaLike, path: PathType) -> None:
+    with open(Path(path) / "schema.txt", "wt") as file:
+        file.write(schema_to_str(schema))
 
 
-def get_schema(**kwargs: np.dtype):
-    """Turn mapping name -> np.dtype into what mmapped_df expects: a schema."""
-    return pd.DataFrame({c: pd.Series(dtype=dt) for c, dt in kwargs.items()})
+def _read_schema(path: PathType) -> Schema:
+    with open(Path(path) / "schema.txt", "rt") as file:
+        return str_to_schema(file.read())
+
+
+def get_schema(**columns: npt.DTypeLike) -> Schema:
+    """Return an ordered mapping suitable for mmappet dataset creation."""
+
+    return _normalize_schema(columns)
 
 
 class DatasetWriter:
     def __init__(
-        self, path: PathLike, append_ok: bool = False, overwrite_dir: bool = False
+        self, path: PathType, append_ok: bool = False, overwrite_dir: bool = False
     ):
         if append_ok and overwrite_dir:
             raise ValueError("Cannot set both append_ok and overwrite_dir to True.")
-        if isinstance(path, str):
-            path = Path(path)
-        if not isinstance(path, Path):
-            raise TypeError("path must be a Path or a string representing a path.")
-        self.path = path
-        self.files = None
-        self.colnames = None
-        self.dtypes = None
-        self.schema = None
-        if self.path.exists():
-            if append_ok:
-                tbl = _read_schema_tbl(self.path)
-                self._reset_schema(tbl)
-            else:
-                if overwrite_dir:
-                    import shutil
+        self.path = Path(path)
+        self.files: list[BinaryIO] = []
+        self.colnames: list[str] = []
+        self.dtypes: list[np.dtype] = []
+        self.schema: Schema = {}
+        self._initialized = False
+        self.length = 0
 
-                    shutil.rmtree(self.path, ignore_errors=True)
-        else:
-            self.path.mkdir(parents=True, exist_ok=overwrite_dir)
+        if self.path.exists() and overwrite_dir:
+            import shutil
+
+            shutil.rmtree(self.path)
+        self.path.mkdir(parents=True, exist_ok=True)
+
+        if append_ok and (self.path / "schema.txt").is_file():
+            self._reset_schema(_read_schema(self.path))
 
     @staticmethod
     def preallocate_dataset(
-        path: PathLike,
-        dataframe_scheme: pd.DataFrame,
+        path: PathType,
+        schema: SchemaLike,
         nrows: int,
-        overwrite_dir=False,
+        overwrite_dir: bool = False,
     ) -> None:
-        with DatasetWriter(path=path, overwrite_dir=overwrite_dir) as DW:
-            DW._reset_schema(like=dataframe_scheme)
-            for file, dt in zip(DW.files, DW.dtypes):
-                file.truncate(nrows * dt.itemsize)
+        if nrows < 0:
+            raise ValueError("nrows must be non-negative")
+        with DatasetWriter(path=path, overwrite_dir=overwrite_dir) as writer:
+            writer._reset_schema(schema)
+            for file, dtype in zip(writer.files, writer.dtypes):
+                file.truncate(nrows * dtype.itemsize)
 
-    def _reset_schema(self, like: pd.DataFrame):
+    def _reset_schema(self, schema: SchemaLike) -> None:
         self.close()
+        self.schema = _normalize_schema(schema)
         self.files = []
-        self.colnames = []
-        self.dtypes = []
-        schema_str = schema_to_str(like)
-        self.schema = str_to_schema(schema_str)
-        lengths = []
-        for idx, colname in enumerate(self.schema):
-            file_path = self.path / f"{idx}.bin"
-            self.files.append(open(file_path, "ab", buffering=10240))
-            self.colnames.append(colname)
-            self.dtypes.append(self.schema[colname].values.dtype)
-            lengths.append(file_path.stat().st_size / self.dtypes[-1].itemsize)
+        self.colnames = list(self.schema)
+        self.dtypes = list(self.schema.values())
 
-        if not (lengths == [] or all(l == lengths[0] for l in lengths)):
+        lengths = []
+        for index, dtype in enumerate(self.dtypes):
+            file_path = self.path / f"{index}.bin"
+            # These handles intentionally remain open for the writer lifetime.
+            self.files.append(open(file_path, "ab", buffering=10240))  # noqa: SIM115
+            size = file_path.stat().st_size
+            if size % dtype.itemsize:
+                raise RuntimeError(
+                    f"Corrupted dataset: {file_path} size is not divisible "
+                    f"by dtype {dtype}"
+                )
+            lengths.append(size // dtype.itemsize)
+
+        if lengths and not all(length == lengths[0] for length in lengths):
             raise RuntimeError(
                 f"Corrupted dataset: columns of unequal lengths: {self.path}"
             )
 
-        self.length = 0 if lengths == [] else int(lengths[0])
-
-        with open(self.path / "schema.txt", "wt") as f:
-            f.write(schema_str)
+        self.length = 0 if not lengths else lengths[0]
+        write_schema(self.schema, self.path)
+        self._initialized = True
 
     @classmethod
     def new(
         cls,
-        path: PathLike,
+        path: PathType,
         append_ok: bool = False,
         overwrite_dir: bool = False,
-        **kwargs,
-    ):
-        assert (
-            len(kwargs) > 0
-        ), "Using `.new` requires you to specify the types of columns in advance and pass them in as `column=numpy.type` fashion, e.g. `scan=np.uint32`."
-        res = cls(path, append_ok, overwrite_dir)
-        res._reset_schema(like=get_schema(**kwargs))
-        return res
+        **columns: npt.DTypeLike,
+    ) -> DatasetWriter:
+        if not columns:
+            raise ValueError(
+                "DatasetWriter.new requires column=dtype arguments, for "
+                "example scan=np.uint32"
+            )
+        writer = cls(path, append_ok, overwrite_dir)
+        writer._reset_schema(columns)
+        return writer
 
-    def close(self):
-        if self.files is not None:
-            for file in self.files:
-                file.close()
-        self.files = None
+    def close(self) -> None:
+        for file in self.files:
+            file.close()
+        self.files = []
+        self._initialized = False
 
     def __del__(self):
         self.close()
 
-    def __enter__(self):
+    def __enter__(self) -> DatasetWriter:  # noqa: PYI034
         return self
 
-    def __exit__(self, type, value, traceback):
+    def __exit__(self, type, value, traceback) -> None:
         self.close()
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self.length
 
-    def append_df(self, df: pd.DataFrame):
-        if len(df) == 0:
-            return
-        if self.files is None:
-            self._reset_schema(like=df)
-        self.length += len(df)
-        for idx, colname in enumerate(df):
-            column = df[colname]
-            assert colname == self.colnames[idx]
-            assert (
-                column.values.dtype == self.dtypes[idx] or len(df) == 0
-            ), f"Types don't match: {column.values.dtype} vs {self.dtypes[idx]}"
-            self.files[idx].write(column.values.tobytes())
+    def append(self, **columns: npt.ArrayLike) -> None:
+        """Append equally sized one-dimensional columns."""
 
-    def append_column(self, colname: str, column: Union[npt.NDArray, pd.Series]):
-        if isinstance(column, pd.Series):
-            column = column.values
-        assert self.length == len(column)
-        self.schema[colname] = np.empty_like(column)
-        with open(self.path / f"{len(self.files)}.bin", "xb") as f:
-            f.write(column.tobytes())
-        self._reset_schema(like=self.schema)
+        if not columns:
+            raise ValueError("append requires at least one column")
+        if not self._initialized:
+            schema = self.schema or {
+                name: np.asarray(values).dtype for name, values in columns.items()
+            }
+            self._reset_schema(schema)
+        if list(columns) != self.colnames:
+            raise ValueError(
+                f"Columns must be {self.colnames} in that order; got {list(columns)}"
+            )
 
-    def append_columns(self, **colname_to_values: Union[npt.NDArray, pd.Series]):
-        for col, vals in colname_to_values.items():
-            assert len(vals) == len(
-                self
-            ), f"Column `{col}` has {len(vals)} elements, and here we store columns with {len(self)} values. Submit values being either an np.array or pd.Series of the same size as the dataset."
-        for col, vals in colname_to_values.items():
-            self.append_column(colname=col, column=vals)
+        arrays = [
+            np.asarray(columns[name], dtype=dtype)
+            for name, dtype in zip(self.colnames, self.dtypes)
+        ]
+        if any(array.ndim != 1 for array in arrays):
+            raise ValueError("appended columns must be one-dimensional")
+        lengths = [len(array) for array in arrays]
+        if not all(length == lengths[0] for length in lengths):
+            raise ValueError(f"appended columns have unequal lengths: {lengths}")
 
-    def flush(self):
+        for file, array in zip(self.files, arrays):
+            file.write(array.tobytes())
+        self.length += lengths[0]
+
+    def append_df(self, dataframe) -> None:
+        """Append a pandas DataFrame when the optional extra is installed."""
+
+        try:
+            columns = {
+                name: dataframe[name].to_numpy(copy=False) for name in dataframe.columns
+            }
+        except AttributeError as error:
+            raise TypeError("append_df expects a pandas DataFrame") from error
+        self.append(**columns)
+
+    def append_column(self, colname: str, column: npt.ArrayLike) -> None:
+        if not self._initialized:
+            raise ValueError("append_column requires an initialized schema")
+        array = np.asarray(column)
+        if array.ndim != 1:
+            raise ValueError("column must be one-dimensional")
+        if len(array) != len(self):
+            raise ValueError(
+                f"Column {colname!r} has {len(array)} rows; expected {len(self)}"
+            )
+        if colname in self.schema:
+            raise ValueError(f"Column already exists: {colname}")
+
+        schema = dict(self.schema)
+        schema[colname] = array.dtype
+        with open(self.path / f"{len(self.files)}.bin", "xb") as file:
+            file.write(array.tobytes())
+        self._reset_schema(schema)
+
+    def append_columns(self, **columns: npt.ArrayLike) -> None:
+        arrays = {name: np.asarray(values) for name, values in columns.items()}
+        for name, array in arrays.items():
+            if len(array) != len(self):
+                raise ValueError(
+                    f"Column {name!r} has {len(array)} rows; expected {len(self)}"
+                )
+        for name, array in arrays.items():
+            self.append_column(name, array)
+
+    def flush(self) -> None:
         for file in self.files:
             file.flush()
 
-    def append(self, **kwargs):
-        if self.files is None:
-            self._reset_schema(pd.DataFrame(kwargs, copy=False))
-        length = None
-        for file, dtype, colname in zip(self.files, self.dtypes, self.colnames):
-            dat = dtype.type(kwargs[colname])
-            file.write(dat.tobytes())
-            length = len(kwargs[colname])
-        self.length += length
+    def append_row(self, **values: Any) -> None:
+        if not self._initialized:
+            self._reset_schema(
+                {name: np.asarray(value).dtype for name, value in values.items()}
+            )
+        self.append(
+            **{
+                name: np.asarray([values[name]], dtype=dtype)
+                for name, dtype in zip(self.colnames, self.dtypes)
+            }
+        )
 
-    def append_row(self, **kwargs):
-        if self.files is None:
-            self._reset_schema(pd.DataFrame([kwargs], copy=False))
-        for file, dtype, colname in zip(self.files, self.dtypes, self.colnames):
-            dat = dtype.type(kwargs[colname])
-            file.write(dat.tobytes())
-        self.length += 1
+    def append_dct(self, values: Mapping[str, npt.ArrayLike]) -> None:
+        self.append(**values)
 
-    def append_dct(self, D):
-        return self.append(**D)
-
-    def append_list(self, L):
-        assert len(L) == len(self.files)
-        self.length += len(L[0])
-        for data, file, dtype in zip(L, self.files, self.dtypes):
-            dat = dtype.type(data)
-            file.write(dat.tobytes())
+    def append_list(self, columns: Sequence[npt.ArrayLike]) -> None:
+        if not self._initialized:
+            raise ValueError("append_list requires an initialized schema")
+        if len(columns) != len(self.colnames):
+            raise ValueError(
+                f"Expected {len(self.colnames)} columns; got {len(columns)}"
+            )
+        self.append(**dict(zip(self.colnames, columns)))
 
 
-def open_dataset_dct(path: PathLike, read_write: bool = False, **kwargs):
+def open_dataset_dct(
+    path: PathType, read_write: bool = False, **kwargs
+) -> dict[str, np.ndarray]:
+    """Open a dataset as an ordered dictionary of mmap-backed NumPy arrays."""
+
     path = Path(path)
-    df = _read_schema_tbl(path)
-    new_data = {}
-
+    schema = _read_schema(path)
+    arrays = {}
     open_flags = os.O_RDWR if read_write else os.O_RDONLY
-    try:
-        open_flags = open_flags | os.O_BINARY
-    except AttributeError:
-        # We're not on Windows, thank goodness
-        pass
+    open_flags |= getattr(os, "O_BINARY", 0)
 
     def do_mmap(fd):
         if os.name == "nt":
             return mmap.mmap(
                 fd, 0, access=mmap.ACCESS_WRITE if read_write else mmap.ACCESS_READ
             )
-        else:
-            return mmap.mmap(
-                fd,
-                0,
-                prot=mmap.PROT_READ | mmap.PROT_WRITE if read_write else mmap.PROT_READ,
-            )
+        return mmap.mmap(
+            fd,
+            0,
+            prot=mmap.PROT_READ | mmap.PROT_WRITE if read_write else mmap.PROT_READ,
+        )
 
-    for idx, column_name in enumerate(df):
-        col_dtype = df[column_name].values.dtype
-        fd = os.open(path / f"{idx}.bin", open_flags)
+    for index, (column_name, dtype) in enumerate(schema.items()):
+        fd = os.open(path / f"{index}.bin", open_flags)
         if os.fstat(fd).st_size == 0:
             os.close(fd)
-            new_data[column_name] = np.empty(0, dtype=col_dtype)
+            arrays[column_name] = np.empty(0, dtype=dtype)
             continue
-        mmap_obj = do_mmap(fd)
-        new_data[column_name] = np.frombuffer(mmap_obj, dtype=col_dtype)
+        mmap_object = do_mmap(fd)
+        os.close(fd)
+        arrays[column_name] = np.frombuffer(mmap_object, dtype=dtype)
 
-    return new_data
+    return arrays
 
 
-def open_new_dataset_dct(path: PathLike, scheme: Union[pd.DataFrame, dict], nrows: int):
-    """Create a new dataset and return it as dictionary of column names to appropriately sized arrays."""
-    DatasetWriter.preallocate_dataset(
-        path,
-        pd.DataFrame(scheme),
-        nrows=nrows,
-    )
+def open_new_dataset_dct(
+    path: PathType, schema: SchemaLike, nrows: int
+) -> dict[str, np.ndarray]:
+    """Create and open a fixed-size dataset as writable NumPy arrays."""
+
+    DatasetWriter.preallocate_dataset(path, schema, nrows=nrows)
     return open_dataset_dct(path, read_write=True)
 
 
-def open_dataset_simple_namespace(path: PathLike, **kwargs) -> SimpleNamespace:
+def open_dataset_simple_namespace(path: PathType, **kwargs) -> SimpleNamespace:
     return SimpleNamespace(**open_dataset_dct(path, **kwargs))
 
 
-def open_dataset(path: PathLike, **kwargs):
+def open_dataset(path: PathType, **kwargs):
+    """Open as a pandas DataFrame using the optional pandas dependency."""
+
+    try:
+        import pandas as pd
+    except ImportError as error:
+        raise ImportError(
+            "open_dataset requires pandas; install mmappet[pandas]"
+        ) from error
     return pd.DataFrame(open_dataset_dct(path, **kwargs), copy=False)
 
 
-def np_to_pa(np_arr):
-    """Convert Numpy array to Pyarrow one, sharing the same backing buffer"""
-    import pyarrow as pa
+def np_to_pa(array: np.ndarray):
+    """Convert a NumPy array to a zero-copy PyArrow array."""
 
-    pyarrow_buf = pa.py_buffer(np_arr)
-    dtype = pa.from_numpy_dtype(np_arr.dtype)
+    import pyarrow as pa  # pyright: ignore[reportMissingImports]
+
+    pyarrow_buffer = pa.py_buffer(array)
+    dtype = pa.from_numpy_dtype(array.dtype)
     return pa.Array.from_buffers(
-        type=dtype, length=len(np_arr), buffers=[None, pyarrow_buf], null_count=0
+        type=dtype,
+        length=len(array),
+        buffers=[None, pyarrow_buffer],
+        null_count=0,
     )
 
 
-def open_dataset_pa(path: PathLike, **kwargs):
-    """Return dataset as dict of colname -> mmapped pyarrow array"""
-    return {key: np_to_pa(val) for key, val in open_dataset_dct(path, **kwargs).items()}
+def open_dataset_pa(path: PathType, **kwargs):
+    """Return a dataset as a dictionary of mmap-backed PyArrow arrays."""
+
+    return {
+        key: np_to_pa(value) for key, value in open_dataset_dct(path, **kwargs).items()
+    }
 
 
-def open_dataset_pl(path: PathLike, **kwargs):
-    """Return dataset as mmapped Polars dataframe"""
-    import polars as pl
-    import pyarrow as pa
+def open_dataset_pl(path: PathType, **kwargs):
+    """Return a dataset as an mmap-backed Polars DataFrame."""
+
+    import polars as pl  # pyright: ignore[reportMissingImports]
+    import pyarrow as pa  # pyright: ignore[reportMissingImports]
 
     return pl.from_arrow(pa.table(open_dataset_pa(path, **kwargs)))

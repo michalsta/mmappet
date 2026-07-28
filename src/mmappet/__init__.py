@@ -1,4 +1,5 @@
 import importlib.metadata
+
 from .mmappet import *
 
 __version__ = importlib.metadata.version("mmappet")
