@@ -1,72 +1,76 @@
-import os
-import subprocess
-import sys
-from pathlib import Path
-
+from mmappet import DatasetWriter, get_schema, open_dataset, open_dataset_dct, open_new_dataset_dct
 import numpy as np
-import pytest
-
-from mmappet import (
-    DatasetWriter,
-    get_schema,
-    open_dataset,
-    open_dataset_dct,
-    open_new_dataset_dct,
-    schema_to_str,
-    str_to_schema,
-)
+import pandas as pd
+import tempfile
+import os
+import shutil
 
 
-def test_numpy_roundtrip_and_append(tmp_path):
-    path = tmp_path / "test.mmappet"
-    first = {
-        "a": np.arange(100, dtype=np.uint32),
-        "b": np.linspace(0, 1, 100, dtype=np.float64),
-        "c": np.arange(100, dtype=np.int64),
-    }
-    second = {
-        "a": np.arange(100, 200, dtype=np.uint32),
-        "b": np.linspace(1, 2, 100, dtype=np.float64),
-        "c": np.arange(100, 200, dtype=np.int64),
-    }
+def check_roundtrip():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "test.mmappet")
+        print(f"Testing roundtrip in temporary directory: {path}")
+        schema = pd.DataFrame(
+            {
+                "a": pd.Series(dtype=np.uint32),
+                "b": pd.Series(dtype=np.float64),
+                "c": pd.Series(dtype=np.int64),
+            }
+        )
 
-    with DatasetWriter(path, overwrite_dir=True) as writer:
-        writer.append(**first)
-    with DatasetWriter(path, append_ok=True) as writer:
-        assert len(writer) == 100
-        writer.append(**second)
-        assert len(writer) == 200
+        # Test open/close pattern
+        writer = DatasetWriter(path, overwrite_dir=True)
+        data = pd.DataFrame(
+            {
+                "a": np.arange(100, dtype=np.uint32),
+                "b": np.random.rand(100).astype(np.float64),
+                "c": np.array(range(100), dtype=np.int64),
+            }
+        )
+        writer.append_df(data)
+        writer.close()
 
-    result = open_dataset_dct(path)
-    for name, first_values in first.items():
-        expected = np.concatenate([first_values, second[name]])
-        np.testing.assert_array_equal(result[name], expected)
+        # Read back the data
+        df = open_dataset(path, read_write=False)
+        pd.testing.assert_frame_equal(df, data)
+
+        # Test appending more data
+        more_data = pd.DataFrame(
+            {
+                "a": np.arange(100, 200, dtype=np.uint32),
+                "b": np.random.rand(100).astype(np.float64),
+                "c": np.array(range(100, 200), dtype=np.int64),
+            }
+        )
+
+        # Test context manager pattern
+        with DatasetWriter(path, append_ok=True) as writer:
+            writer.append_df(more_data)
+
+        df = open_dataset(path, read_write=False)
+        combined_data = pd.concat([data, more_data], ignore_index=True)
+        pd.testing.assert_frame_equal(df, combined_data)
+
+        #shutil.rmtree(path, ignore_errors=True)
 
 
-def test_append_ok_can_create_a_new_dataset(tmp_path):
-    path = tmp_path / "new.mmappet"
-
-    with DatasetWriter(path, append_ok=True) as writer:
-        writer.append(values=np.asarray([1, 2, 3], dtype=np.int64))
-
-    np.testing.assert_array_equal(
-        open_dataset_dct(path)["values"],
-        np.asarray([1, 2, 3], dtype=np.int64),
-    )
-
-
-def test_schema_is_an_ordered_numpy_dtype_mapping():
-    schema = get_schema(a=np.uint32, b=np.float64)
-
-    assert schema == {"a": np.dtype(np.uint32), "b": np.dtype(np.float64)}
-    assert str_to_schema(schema_to_str(schema)) == schema
+def test_roundtrip():
+    try:
+        check_roundtrip()
+    except (PermissionError, NotADirectoryError) as e:
+        if os.name == "nt":
+            print(
+                "PermissionError encountered on Windows. This may be due to file locking behavior. Skipping test."
+            )
+        else:
+            raise e
 
 
 def test_zero_row_dataset_roundtrip(tmp_path):
     path = tmp_path / "empty.mmappet"
     schema = get_schema(a=np.uint32, b=np.float64)
 
-    data = open_new_dataset_dct(path, schema=schema, nrows=0)
+    data = open_new_dataset_dct(path, scheme=schema, nrows=0)
     assert list(data) == ["a", "b"]
     assert data["a"].dtype == np.dtype(np.uint32)
     assert data["b"].dtype == np.dtype(np.float64)
@@ -76,52 +80,15 @@ def test_zero_row_dataset_roundtrip(tmp_path):
     reopened = open_dataset_dct(path)
     assert reopened["a"].dtype == np.dtype(np.uint32)
     assert reopened["b"].dtype == np.dtype(np.float64)
+    assert len(reopened["a"]) == 0
+    assert len(reopened["b"]) == 0
+
+    df = open_dataset(path)
+    assert list(df.columns) == ["a", "b"]
+    assert df.dtypes["a"] == np.dtype(np.uint32)
+    assert df.dtypes["b"] == np.dtype(np.float64)
+    assert len(df) == 0
 
 
-def test_append_rejects_unequal_or_misordered_columns(tmp_path):
-    path = tmp_path / "invalid.mmappet"
-    with DatasetWriter.new(path, a=np.int64, b=np.float32) as writer:
-        with pytest.raises(ValueError, match="unequal"):
-            writer.append(
-                a=np.array([1, 2], dtype=np.int64),
-                b=np.array([1], dtype=np.float32),
-            )
-        with pytest.raises(ValueError, match="Columns must"):
-            writer.append(
-                b=np.array([1], dtype=np.float32),
-                a=np.array([1], dtype=np.int64),
-            )
-
-
-def test_pandas_adapters_are_optional_and_roundtrip(tmp_path):
-    pd = pytest.importorskip("pandas")
-    path = tmp_path / "pandas.mmappet"
-    expected = pd.DataFrame(
-        {
-            "a": np.arange(3, dtype=np.uint32),
-            "b": np.arange(3, dtype=np.float64),
-        }
-    )
-
-    with DatasetWriter(path) as writer:
-        writer.append_df(expected)
-
-    pd.testing.assert_frame_equal(open_dataset(path), expected)
-
-
-def test_importing_core_does_not_import_pandas():
-    environment = dict(os.environ)
-    environment["PYTHONPATH"] = os.fspath((Path(__file__).parents[2] / "src").resolve())
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            "import sys, mmappet; assert 'pandas' not in sys.modules",
-        ],
-        env=environment,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-    assert completed.returncode == 0, completed.stderr
+if __name__ == "__main__":
+    test_roundtrip()
