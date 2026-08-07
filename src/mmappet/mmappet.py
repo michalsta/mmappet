@@ -62,6 +62,7 @@ class DatasetWriter:
                     import shutil
 
                     shutil.rmtree(self.path, ignore_errors=True)
+                    self.path.mkdir(parents=True, exist_ok=True)
         else:
             self.path.mkdir(parents=True, exist_ok=overwrite_dir)
 
