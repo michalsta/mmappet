@@ -20,7 +20,16 @@ def append_empty_columns(folder: str | Path, **name2dtype):
     column_number = len(dataset)
     for name in name2dtype:
         assert name not in dataset
-    with open(folder / "schema.txt", "a") as schema:
+    schema_path = folder / "schema.txt"
+    # DatasetWriter/write_schema never terminate schema.txt with a trailing
+    # newline (schema_to_str is "\n".join(...)), so a plain append-mode write
+    # here would concatenate the new column onto the previous line instead of
+    # starting a fresh one.
+    existing = schema_path.read_text()
+    if existing and not existing.endswith("\n"):
+        existing += "\n"
+    with open(schema_path, "w") as schema:
+        schema.write(existing)
         for name, dtype in name2dtype.items():
             dtype = np.dtype(dtype)
             column_size = dtype.itemsize
